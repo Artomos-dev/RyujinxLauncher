@@ -151,6 +151,7 @@ class RyujinxLauncherApp:
         self.hardware_map = {} 
         self.alert_mode = None 
         self.alert_frame = None
+        self.ryujinx_process = None
 
         self.master_template = self.load_config_data(CONFIG_FILE)
         if self.master_template == FALLBACK_TEMPLATE:
@@ -252,12 +253,49 @@ class RyujinxLauncherApp:
     def handle_enter_key(self):
         if self.alert_mode == "LAUNCH": self.force_launch()
         elif self.alert_mode == "EXIT": self.root.destroy()
+        elif self.alert_mode == "KILL_CONFIRM": self.perform_kill()
 
     def handle_esc_key(self):
         if self.alert_mode: self.close_alert()
         else: self.show_exit_confirmation()
 
+    def perform_kill(self):
+        if self.ryujinx_process:
+            self.ryujinx_process.kill()
+        self.root.quit()
+        sys.exit()
+
     def update_loop(self):
+        # --- BACKGROUND MONITORING ---
+        if self.ryujinx_process and not self.alert_mode:
+            if self.ryujinx_process.poll() is not None:
+                # Ryujinx closed normally
+                self.root.quit()
+                sys.exit()
+
+            # Check Kill Combo: Back + L + R on PLAYER 1 ONLY
+            kill_combo = False
+
+            # Only proceed if we have at least 1 player assigned
+            if len(self.assignments) > 0:
+                p1_instance_id = self.assignments[0][0] # Get ID of Player 1
+
+                # Verify Player 1 is still connected
+                if p1_instance_id in self.controllers:
+                    ctrl = self.controllers[p1_instance_id]
+
+                    if (sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_BACK) and
+                        sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_LEFTSHOULDER) and
+                        sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)):
+                        kill_combo = True
+
+            if kill_combo:
+                self.root.deiconify() # Bring GUI back
+                self.show_alert("KILL_CONFIRM")
+                self.root.after(50, self.update_loop)
+                return
+        # -----------------------------
+
         num_joysticks = sdl2.SDL_NumJoysticks()
         guid_counters = {} 
         self.hardware_map.clear()
@@ -291,9 +329,20 @@ class RyujinxLauncherApp:
                     if event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_A:
                         if self.alert_mode == "LAUNCH": self.force_launch()
                         elif self.alert_mode == "EXIT": self.root.destroy()
+                        elif self.alert_mode == "KILL_CONFIRM": self.perform_kill()
                     elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_B:
-                        self.close_alert()
+                        if self.alert_mode == "KILL_CONFIRM":
+                            self.close_alert()
+                            self.root.withdraw() # Go back to background
+                        else:
+                            self.close_alert()
                 else:
+                    # --- ADDED SAFETY CHECK ---
+                    # If game is running, IGNORE all standard inputs
+                    if self.ryujinx_process:
+                        continue
+                    # ---------------------------
+
                     if event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_A:
                         self.assign_player(event.cbutton.which)
                     elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_B:
@@ -408,6 +457,14 @@ class RyujinxLauncherApp:
             tk.Label(btn_frame, text="Ⓐ YES", font=("Segoe UI", int(12*s), "bold"), bg="#1E1E1E", fg=COLOR_NEON_BLUE).pack(side="left", padx=int(20*s))
             tk.Label(btn_frame, text="Ⓑ NO", font=("Segoe UI", int(12*s), "bold"), bg="#1E1E1E", fg=COLOR_NEON_RED).pack(side="left", padx=int(20*s))
 
+        elif mode == "KILL_CONFIRM":
+            tk.Label(box, text="KILL GAME?", font=("Segoe UI", int(26*s), "bold"), bg="#1E1E1E", fg=COLOR_TEXT_WHITE).pack(pady=(int(40*s), int(10*s)))
+            tk.Label(box, text="Force close Ryujinx and return to desktop?", font=("Segoe UI", int(14*s)), bg="#1E1E1E", fg="#BBBBBB").pack(pady=int(5*s))
+            btn_frame = tk.Frame(box, bg="#1E1E1E")
+            btn_frame.pack(pady=int(40*s))
+            tk.Label(btn_frame, text="Ⓐ YES", font=("Segoe UI", int(12*s), "bold"), bg="#1E1E1E", fg=COLOR_NEON_BLUE).pack(side="left", padx=int(20*s))
+            tk.Label(btn_frame, text="Ⓑ NO", font=("Segoe UI", int(12*s), "bold"), bg="#1E1E1E", fg=COLOR_NEON_RED).pack(side="left", padx=int(20*s))
+
     def close_alert(self):
         self.alert_mode = None
         if self.alert_frame:
@@ -439,7 +496,7 @@ class RyujinxLauncherApp:
 
     def force_launch(self):
         self.save_config()
-        self.root.destroy()
+        self.root.withdraw()
         
         exe_path = os.path.join(ryujinx_dir, TARGET_EXE)
         if not os.path.exists(exe_path):
@@ -448,12 +505,13 @@ class RyujinxLauncherApp:
         if os.path.exists(exe_path):
             try:
                 cmd_args = [exe_path] + sys.argv[1:]
-                subprocess.Popen(cmd_args)
+                self.ryujinx_process = subprocess.Popen(cmd_args)
             except Exception as e:
                 messagebox.showerror("Launch Error", f"Failed to start Ryujinx.\n{e}")
+                sys.exit()
         else:
             messagebox.showerror("Missing File", f"Could not find {TARGET_EXE}")
-        sys.exit()
+            sys.exit()
 
 if __name__ == "__main__":
     root = tk.Tk()
