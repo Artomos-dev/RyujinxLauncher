@@ -85,7 +85,6 @@ except ImportError:
     sys.exit(1)
 
 # --- MAPPING FIX: A=A, B=B ---
-# Matches standard controller layout where bottom button confirms
 FALLBACK_TEMPLATE = {
     "version": 1, "backend": "GamepadSDL2", "id": "", "name": "", "controller_type": "ProController", "player_index": "",
     "deadzone_left": 0.1, "deadzone_right": 0.1, "range_left": 1, "range_right": 1, "trigger_threshold": 0.5,
@@ -120,11 +119,11 @@ FALLBACK_TEMPLATE = {
 
 # --- SWITCH THEME COLORS ---
 COLOR_BG_DARK = "#0F0F0F"       # Main Background
-COLOR_BG_CARD = "#1A1A1A"       # Empty Card
-COLOR_NEON_BLUE = "#0AB9E6"     # Neon Blue (Active Card / Connect)
+COLOR_BG_CARD = "#1A1A1A"       # Empty/Active Card BG (Dark Gray)
+COLOR_NEON_BLUE = "#0AB9E6"     # Neon Blue (Border / Name)
 COLOR_NEON_RED = "#FF3C28"      # Neon Red (Disconnect)
 COLOR_TEXT_WHITE = "#EDEDED"
-COLOR_TEXT_DIM = "#666666"
+COLOR_TEXT_DIM = "#666666"      # Neutral Gray for Inactive
 
 class RyujinxLauncherApp:
     def __init__(self, root):
@@ -169,18 +168,9 @@ class RyujinxLauncherApp:
         title_text = f"{mode_prefix} CONTROLLER SETUP"
         
         self.lbl_title = tk.Label(self.main_container, text=title_text, font=("Segoe UI", int(32*s), "bold"), bg=COLOR_BG_DARK, fg=COLOR_TEXT_WHITE)
-        self.lbl_title.pack(pady=(int(20*s), int(10*s)))
+        self.lbl_title.pack(pady=(int(20*s), int(30*s))) 
         
-        # 2. INSTRUCTIONS (SWITCH THEME - CLEAN)
-        self.sub_frame = tk.Frame(self.main_container, bg=COLOR_BG_DARK)
-        self.sub_frame.pack(pady=(0, int(30*s)))
-        
-        # Just the actions, no "PRESS" text
-        tk.Label(self.sub_frame, text="Ⓐ CONNECT", font=("Segoe UI", int(16*s), "bold"), bg=COLOR_BG_DARK, fg=COLOR_NEON_BLUE).pack(side="left", padx=15)
-        tk.Label(self.sub_frame, text="|", font=("Segoe UI", int(16*s)), bg=COLOR_BG_DARK, fg=COLOR_TEXT_DIM).pack(side="left", padx=15)
-        tk.Label(self.sub_frame, text="Ⓑ DISCONNECT", font=("Segoe UI", int(16*s), "bold"), bg=COLOR_BG_DARK, fg=COLOR_NEON_RED).pack(side="left", padx=15)
-
-        # 3. PLAYER GRID
+        # 2. PLAYER GRID
         self.grid_frame = tk.Frame(self.main_container, bg=COLOR_BG_DARK)
         self.grid_frame.pack()
         
@@ -190,32 +180,61 @@ class RyujinxLauncherApp:
             col = i % 2   
             
             c_w = int(420 * s)
-            c_h = int(85 * s)
+            c_h = int(90 * s) 
             pad_x = int(20 * s)
             pad_y = int(12 * s)
             
-            card = tk.Frame(self.grid_frame, bg=COLOR_BG_CARD, width=c_w, height=c_h) 
+            # Use highlightthickness for the border
+            card = tk.Frame(self.grid_frame, bg=COLOR_BG_CARD, width=c_w, height=c_h, 
+                            highlightbackground=COLOR_BG_CARD, highlightthickness=int(2*s)) 
             card.pack_propagate(False) 
             card.grid(row=row, column=col, padx=pad_x, pady=pad_y)
             
+            # P# Label (Top Left)
             lbl_num = tk.Label(card, text=f"P{i+1}", font=("Segoe UI", int(12*s), "bold"), bg=COLOR_BG_CARD, fg="#444444")
             lbl_num.place(x=int(15*s), y=int(10*s))
             
-            lbl_status = tk.Label(card, text="WAITING...", font=("Segoe UI", int(14*s)), bg=COLOR_BG_CARD, fg="#444444")
+            # Status Label (Center - for "Waiting" or "Name")
+            lbl_status = tk.Label(card, text="PRESS Ⓐ CONNECT", font=("Segoe UI", int(12*s), "bold"), bg=COLOR_BG_CARD, fg=COLOR_TEXT_DIM)
             lbl_status.place(relx=0.5, rely=0.5, anchor="center")
             
-            self.slot_cards.append((card, lbl_num, lbl_status))
-
-        # 4. SMART FOOTER
+            # Disconnect Label (Bottom Middle - Hidden initially)
+            lbl_disc = tk.Label(card, text="Ⓑ DISCONNECT", font=("Segoe UI", int(10*s), "bold"), bg=COLOR_BG_CARD, fg=COLOR_NEON_RED)
+            
+            self.slot_cards.append((card, lbl_num, lbl_status, lbl_disc))
+        
+        # 3. SMART FOOTER
         self.footer_frame = tk.Frame(root, bg="#111111", height=int(80*s))
         self.footer_frame.pack(side="bottom", fill="x")
         self.footer_frame.pack_propagate(False)
-        
+
         launch_target = "GAME" if len(sys.argv) > 1 else "RYUJINX"
-        instr_text = f"☰ LAUNCH {launch_target}   |   ⧉ QUIT"
-        
-        self.lbl_instr = tk.Label(self.footer_frame, text=instr_text, font=("Segoe UI", int(14*s), "bold"), bg="#111111", fg=COLOR_TEXT_WHITE)
-        self.lbl_instr.pack(expand=True)
+        separator_text = "|"
+        launch_text = f"☰ LAUNCH {launch_target}"
+        quit_text = f"⧉ QUIT"
+
+        # Define the gap size (Approx 2 spaces + half the width of the separator)
+        gap_offset = int(15 * s)
+
+        # 1. DEFINE WIDGETS (Do not pack them)
+        self.separator_text = tk.Label(self.footer_frame, text=separator_text, font=("Segoe UI", int(14*s), "bold"), bg="#111111", fg=COLOR_TEXT_WHITE)
+        self.launch_text = tk.Label(self.footer_frame, text=launch_text, font=("Segoe UI", int(14*s), "bold"), bg="#111111", fg=COLOR_TEXT_WHITE)
+        self.quit_text = tk.Label(self.footer_frame, text=quit_text, font=("Segoe UI", int(14*s), "bold"), bg="#111111", fg=COLOR_TEXT_WHITE)
+
+        # 2. PLACE SEPARATOR (Exact Center)
+        # rely=0.5 puts it vertically in the middle of the footer
+        self.separator_text.place(relx=0.5, rely=0.5, anchor="center")
+
+        # 3. PLACE LAUNCH TEXT (Left of Center)
+        # anchor="e" (East) means the Right side of the text touches the coordinate.
+        # x=-gap_offset shifts it slightly left to create the space.
+        self.launch_text.place(relx=0.5, rely=0.5, anchor="e", x=-gap_offset)
+
+        # 4. PLACE QUIT TEXT (Right of Center)
+        # anchor="w" (West) means the Left side of the text touches the coordinate.
+        # x=gap_offset shifts it slightly right to create the space.
+        self.quit_text.place(relx=0.5, rely=0.5, anchor="w", x=gap_offset)
+
 
         self.update_loop() 
 
@@ -326,25 +345,44 @@ class RyujinxLauncherApp:
     def refresh_grid(self):
         s = self.scale
         for i in range(8):
-            card, lbl_num, lbl_status = self.slot_cards[i]
+            card, lbl_num, lbl_status, lbl_disc = self.slot_cards[i]
             
             if i < len(self.assignments):
+                # --- ACTIVE SLOT ---
                 _, _, display_name = self.assignments[i]
                 
-                # Active Card Color = Neon Blue
-                bg_color = COLOR_NEON_BLUE 
+                # Active: Blue Border, Dark BG
+                card.config(bg=COLOR_BG_CARD, highlightbackground=COLOR_NEON_BLUE, highlightcolor=COLOR_NEON_BLUE)
                 
-                card.config(bg=bg_color)
-                lbl_num.config(bg=bg_color, fg=COLOR_TEXT_WHITE)
+                # P# Label
+                lbl_num.config(bg=COLOR_BG_CARD, fg=COLOR_NEON_BLUE)
                 
+                # Name (Centered Top Middle)
                 short_name = display_name
                 if len(short_name) > 25: short_name = short_name[:23] + ".."
                 
-                lbl_status.config(text=short_name, bg=bg_color, fg=COLOR_TEXT_WHITE, font=("Segoe UI", int(12*s), "bold"))
+                # Move Name Up (rely=0.4) and make it Big & Blue
+                lbl_status.place(relx=0.5, rely=0.25, anchor="center")
+                lbl_status.config(text=short_name, bg=COLOR_BG_CARD, fg=COLOR_NEON_BLUE, font=("Segoe UI", int(12*s), "bold"))
+                
+                # Disconnect (Centered Bottom)
+                lbl_disc.place(relx=0.5, rely=0.75, anchor="center")
+                lbl_disc.config(bg=COLOR_BG_CARD, fg=COLOR_NEON_RED)
+                
             else:
-                card.config(bg=COLOR_BG_CARD)
+                # --- INACTIVE SLOT ---
+                # Inactive: Dark Border (Invisible)
+                card.config(bg=COLOR_BG_CARD, highlightbackground=COLOR_BG_CARD, highlightcolor=COLOR_BG_CARD)
+                
+                # P# Label
                 lbl_num.config(bg=COLOR_BG_CARD, fg="#444444")
-                lbl_status.config(text="WAITING...", bg=COLOR_BG_CARD, fg="#444444", font=("Segoe UI", int(14*s)))
+                
+                # Status Label (Centered Middle)
+                lbl_status.place(relx=0.5, rely=0.5, anchor="center")
+                lbl_status.config(text="PRESS Ⓐ CONNECT", bg=COLOR_BG_CARD, fg=COLOR_TEXT_DIM, font=("Segoe UI", int(12*s), "bold"))
+                
+                # Hide Disconnect Hint
+                lbl_disc.place_forget()
 
     def check_launch(self):
         if len(self.assignments) == 0:
