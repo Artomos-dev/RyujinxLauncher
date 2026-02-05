@@ -8,9 +8,6 @@ import ctypes
 import xml.etree.ElementTree as ET
 import copy
 
-# --- 0. CONFIGURATION ---
-DEV_MODE_PATH = r"D:\Setups\Nintendo Switch Emulator & Roms\Ryujinx" 
-
 # --- 1. HI-DPI FIX ---
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(1)
@@ -21,18 +18,17 @@ except Exception:
 
 # --- 2. SETUP ---
 current_script_dir = os.path.dirname(os.path.abspath(__file__))
-if os.path.exists(DEV_MODE_PATH):
-    # print(f"🔧 DEV MODE: pointing to {DEV_MODE_PATH}")
-    base_path = DEV_MODE_PATH
-else:
-    base_path = current_script_dir
+base_path = current_script_dir
 
+# Force SDL2 to look in the script's directory
 os.environ["PYSDL2_DLL_PATH"] = base_path
 
-# Path Logic
-path_config_file = os.path.join(current_script_dir, "RyujinxPath.config")
+# --- 3. PATH LOGIC ---
+# Default to current directory
 ryujinx_dir = base_path 
 
+# Check for override config file
+path_config_file = os.path.join(current_script_dir, "RyujinxPath.config")
 if os.path.exists(path_config_file):
     try:
         with open(path_config_file, "r") as f:
@@ -41,11 +37,13 @@ if os.path.exists(path_config_file):
                 ryujinx_dir = custom_path
     except: pass
 
+# --- 4. PLATFORM CONFIG ---
 if sys.platform == "win32":
     DEFAULT_LIB = "SDL2.dll"
     TARGET_EXE = "Ryujinx.exe"
     portable_config = os.path.join(ryujinx_dir, "portable", "Config.json")
     appdata_config = os.path.join(os.getenv('APPDATA'), "Ryujinx", "Config.json")
+
     if os.path.exists(portable_config): CONFIG_FILE = portable_config
     elif os.path.exists(os.path.join(ryujinx_dir, "Config.json")): CONFIG_FILE = os.path.join(ryujinx_dir, "Config.json")
     else: CONFIG_FILE = appdata_config
@@ -58,7 +56,7 @@ else:
     TARGET_EXE = "Ryujinx"
     CONFIG_FILE = os.path.expanduser("~/.config/Ryujinx/Config.json")
 
-# Driver Logic
+# --- 5. DRIVER LOADING ---
 xml_config_path = os.path.join(ryujinx_dir, "Ryujinx.SDL2.Common.dll.config")
 lib_name = None
 if os.path.exists(xml_config_path):
@@ -73,6 +71,7 @@ if os.path.exists(xml_config_path):
     except: pass
 if not lib_name: lib_name = DEFAULT_LIB
 
+# Check for driver in Ryujinx dir first, then Launcher dir
 driver_path = os.path.join(ryujinx_dir, lib_name)
 if not os.path.exists(driver_path):
     driver_path = os.path.join(current_script_dir, lib_name)
@@ -84,7 +83,7 @@ except ImportError:
     messagebox.showerror("Error", "PySDL2 not installed.\nRun: pip install pysdl2")
     sys.exit(1)
 
-# --- MAPPING FIX: A=A, B=B ---
+# --- MAPPING TEMPLATE (A=A, B=B) ---
 FALLBACK_TEMPLATE = {
     "version": 1, "backend": "GamepadSDL2", "id": "", "name": "", "controller_type": "ProController", "player_index": "",
     "deadzone_left": 0.1, "deadzone_right": 0.1, "range_left": 1, "range_right": 1, "trigger_threshold": 0.5,
@@ -119,10 +118,10 @@ FALLBACK_TEMPLATE = {
 
 # --- SWITCH THEME COLORS ---
 COLOR_BG_DARK = "#0F0F0F"       # Main Background
-COLOR_BG_CARD = "#1A1A1A"       # Empty/Active Card BG (Dark Gray)
+COLOR_BG_CARD = "#1A1A1A"       # Empty/Active Card BG
 COLOR_NEON_BLUE = "#0AB9E6"     # Neon Blue (Border / Name)
 COLOR_NEON_RED = "#FF3C28"      # Neon Red (Disconnect)
-COLOR_TEXT_WHITE = "#EDEDED"
+COLOR_TEXT_WHITE = "#EDEDED"    # Soft White
 COLOR_TEXT_DIM = "#666666"      # Neutral Gray for Inactive
 
 class RyujinxLauncherApp:
@@ -194,7 +193,7 @@ class RyujinxLauncherApp:
             lbl_num = tk.Label(card, text=f"P{i+1}", font=("Segoe UI", int(12*s), "bold"), bg=COLOR_BG_CARD, fg="#444444")
             lbl_num.place(x=int(15*s), y=int(10*s))
             
-            # Status Label (Center - for "Waiting" or "Name")
+            # Status Label (Center)
             lbl_status = tk.Label(card, text="PRESS Ⓐ CONNECT", font=("Segoe UI", int(12*s), "bold"), bg=COLOR_BG_CARD, fg=COLOR_TEXT_DIM)
             lbl_status.place(relx=0.5, rely=0.5, anchor="center")
             
@@ -202,7 +201,7 @@ class RyujinxLauncherApp:
             lbl_disc = tk.Label(card, text="Ⓑ DISCONNECT", font=("Segoe UI", int(10*s), "bold"), bg=COLOR_BG_CARD, fg=COLOR_NEON_RED)
             
             self.slot_cards.append((card, lbl_num, lbl_status, lbl_disc))
-        
+
         # 3. SMART FOOTER
         self.footer_frame = tk.Frame(root, bg="#111111", height=int(80*s))
         self.footer_frame.pack(side="bottom", fill="x")
@@ -213,28 +212,15 @@ class RyujinxLauncherApp:
         launch_text = f"☰ LAUNCH {launch_target}"
         quit_text = f"⧉ QUIT"
 
-        # Define the gap size (Approx 2 spaces + half the width of the separator)
         gap_offset = int(15 * s)
 
-        # 1. DEFINE WIDGETS (Do not pack them)
         self.separator_text = tk.Label(self.footer_frame, text=separator_text, font=("Segoe UI", int(14*s), "bold"), bg="#111111", fg=COLOR_TEXT_WHITE)
         self.launch_text = tk.Label(self.footer_frame, text=launch_text, font=("Segoe UI", int(14*s), "bold"), bg="#111111", fg=COLOR_TEXT_WHITE)
         self.quit_text = tk.Label(self.footer_frame, text=quit_text, font=("Segoe UI", int(14*s), "bold"), bg="#111111", fg=COLOR_TEXT_WHITE)
 
-        # 2. PLACE SEPARATOR (Exact Center)
-        # rely=0.5 puts it vertically in the middle of the footer
         self.separator_text.place(relx=0.5, rely=0.5, anchor="center")
-
-        # 3. PLACE LAUNCH TEXT (Left of Center)
-        # anchor="e" (East) means the Right side of the text touches the coordinate.
-        # x=-gap_offset shifts it slightly left to create the space.
         self.launch_text.place(relx=0.5, rely=0.5, anchor="e", x=-gap_offset)
-
-        # 4. PLACE QUIT TEXT (Right of Center)
-        # anchor="w" (West) means the Left side of the text touches the coordinate.
-        # x=gap_offset shifts it slightly right to create the space.
         self.quit_text.place(relx=0.5, rely=0.5, anchor="w", x=gap_offset)
-
 
         self.update_loop() 
 
