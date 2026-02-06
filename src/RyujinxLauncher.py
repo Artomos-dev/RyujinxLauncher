@@ -50,6 +50,16 @@ except Exception:
 # ============================================================================
 # SECTION 2: PATH DETECTION & CONFIGURATION
 # ============================================================================
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        icon_path = sys._MEIPASS
+    except Exception:
+        icon_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(icon_path, relative_path)
+
 # 1. Determine the "Base Path" (Where the script or .exe is located)
 if getattr(sys, 'frozen', False):
     # Running as compiled .exe (PyInstaller)
@@ -260,6 +270,28 @@ class RyujinxLauncherApp:
         self.root.title("Ryujinx Launcher")
         self.root.configure(bg=COLOR_BG_DARK)
         self.root.attributes('-fullscreen', True)
+
+        # Update 1: Define the specific filenames from your assets folder
+        ico_path = resource_path(os.path.join("assets", "RyujinxLauncherIcon.ico"))
+        png_path = resource_path(os.path.join("assets", "RyujinxLauncherPNG.png"))
+
+        # Update 2: Robust Icon Loading
+        # Windows prefers .ico for the taskbar
+        if os.path.exists(ico_path):
+            try:
+                self.root.iconbitmap(default=ico_path)
+            except Exception:
+                pass
+
+        # Linux/macOS often prefer .png (iconphoto)
+        # We try this if the .ico didn't work, or as a secondary measure
+        elif os.path.exists(png_path):
+            try:
+                # Use the PNG for the window icon if on Linux/macOS
+                icon_img = tk.PhotoImage(file=png_path)
+                self.root.iconphoto(True, icon_img)
+            except Exception:
+                pass
 
         # Keyboard shortcuts for accessibility
         self.root.bind("<Return>", lambda e: self.handle_enter_key())
