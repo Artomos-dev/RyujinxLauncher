@@ -50,20 +50,33 @@ except Exception:
 # ============================================================================
 # SECTION 2: PATH DETECTION & CONFIGURATION
 # ============================================================================
-current_script_dir = os.path.dirname(os.path.abspath(__file__))
-base_path = current_script_dir
-ryujinx_dir = base_path  # Default: launcher's directory
+# 1. Determine the "Base Path" (Where the script or .exe is located)
+if getattr(sys, 'frozen', False):
+    # Running as compiled .exe (PyInstaller)
+    base_path = os.path.dirname(sys.executable)
+else:
+    # Running as .py script
+    base_path = os.path.dirname(os.path.abspath(__file__))
 
-# Check for custom Ryujinx installation path
-path_config_file = os.path.join(current_script_dir, "RyujinxPath.config")
+# 2. Set Default Ryujinx Directory (Same as launcher)
+ryujinx_dir = base_path
+
+# 3. Check for Custom Path Override (RyujinxPath.config)
+# We look for this file NEXT TO the launcher/script
+path_config_file = os.path.join(base_path, "RyujinxPath.config")
+
 if os.path.exists(path_config_file):
     try:
         with open(path_config_file, "r") as f:
+            # clean up quotes and whitespace
             custom_path = f.readline().strip().replace('"', '')
+
+            # verify the path actually exists before using it
             if os.path.exists(custom_path):
                 ryujinx_dir = custom_path
-    except:
-        pass  # Use default if config is invalid
+    except Exception as e:
+        # If reading fails, silently fall back to default (base_path)
+        pass
 
 # Point PySDL2 to the Ryujinx directory for SDL2.dll/dylib/so
 os.environ["PYSDL2_DLL_PATH"] = ryujinx_dir
