@@ -7,6 +7,7 @@ from tkinter import messagebox
 import ctypes
 import xml.etree.ElementTree as ET
 import copy
+import re # Only new import needed for cleaning name display
 
 # --- 1. HI-DPI FIX ---
 try:
@@ -152,6 +153,8 @@ class RyujinxLauncherApp:
         self.alert_mode = None 
         self.alert_frame = None
         self.ryujinx_process = None
+        self.toast_job = None
+        self.last_joystick_count = -1 # Track for Flush Logic
 
         self.master_template = self.load_config_data(CONFIG_FILE)
         if self.master_template == FALLBACK_TEMPLATE:
@@ -223,6 +226,11 @@ class RyujinxLauncherApp:
         self.launch_text.place(relx=0.5, rely=0.5, anchor="e", x=-gap_offset)
         self.quit_text.place(relx=0.5, rely=0.5, anchor="w", x=gap_offset)
 
+        # NEW: Toast Notification Label
+        self.lbl_toast = tk.Label(self.main_container, text="", font=("Segoe UI", int(12*s), "bold"), bg=COLOR_BG_DARK, fg=COLOR_NEON_RED)
+        self.lbl_toast.place(relx=0.5, rely=0.9, anchor="center")
+        self.lbl_toast.place_forget()
+
         self.update_loop() 
 
     def load_config_data(self, file_path):
@@ -248,6 +256,13 @@ class RyujinxLauncherApp:
         part4_a = raw_hex[16:20]
         part4_b = raw_hex[20:]
         return f"{part1}-{part2}-{part3}-{part4_a}-{part4_b}"
+
+    def show_toast(self, message):
+        if self.toast_job:
+            self.root.after_cancel(self.toast_job)
+        self.lbl_toast.config(text=message)
+        self.lbl_toast.place(relx=0.5, rely=0.9, anchor="center")
+        self.toast_job = self.root.after(2000, lambda: self.lbl_toast.place_forget())
 
     # --- KEYBOARD HANDLERS ---
     def handle_enter_key(self):
@@ -296,11 +311,25 @@ class RyujinxLauncherApp:
                 return
         # -----------------------------
 
-        num_joysticks = sdl2.SDL_NumJoysticks()
+        # MODIFIED: Scan Logic with Index Reshuffle Support
+        # Check if hardware count changed. If so, FLUSH cache to force re-order.
+        current_count = sdl2.SDL_NumJoysticks()
+        is_hardware_change = False # Print flag
+
+        if current_count != self.last_joystick_count:
+            print(f"\n[SYSTEM] Hardware Change Detected: {self.last_joystick_count} -> {current_count}")
+            is_hardware_change = True
+            self.last_joystick_count = current_count
+            # Force close all to reset internal SDL ordering if possible
+            for c in self.controllers.values():
+                sdl2.SDL_GameControllerClose(c)
+            self.controllers.clear()
+
         guid_counters = {} 
         self.hardware_map.clear()
         
-        for i in range(num_joysticks):
+        # Iterate fresh list
+        for i in range(current_count):
             if not sdl2.SDL_IsGameController(i): continue
             ctrl = sdl2.SDL_GameControllerOpen(i)
             if ctrl:
@@ -315,12 +344,52 @@ class RyujinxLauncherApp:
                 sdl2.SDL_JoystickGetGUIDString(guid_obj, psz_guid, 33)
                 raw_guid_str = psz_guid.value.decode()
                 base_guid = self.ryujinx_guid_fix(raw_guid_str)
+
+                # Internal index tracking to handle "Xbox (0)" vs "Xbox (1)"
+                # This recalculates 0/1 based on current order
                 current_idx = guid_counters.get(base_guid, 0)
                 final_hw_id = f"{current_idx}-{base_guid}"
                 final_hw_name = f"{raw_name} ({current_idx})"
                 
                 self.hardware_map[instance_id] = (final_hw_id, final_hw_name)
                 guid_counters[base_guid] = current_idx + 1
+
+        # Debug Print if Hardware Changed
+        if is_hardware_change:
+            print("--- CURRENT DEVICE LIST ---")
+            for inst_id, (ryu_id, ryu_name) in self.hardware_map.items():
+                print(f"ID: {inst_id} | Name: {ryu_name} | GUID: {ryu_id}")
+            print("---------------------------\n")
+
+        # MODIFIED: Sync Assignments (Auto-Promote)
+        new_assignments = []
+        dropped_info = [] # Store index and name
+        grid_needs_update = False
+
+        for i, (instance_id, old_ryu_id, old_name) in enumerate(self.assignments):
+            if instance_id in self.hardware_map:
+                # Controller still present, update data
+                fresh_ryu_id, fresh_name = self.hardware_map[instance_id]
+                new_assignments.append((instance_id, fresh_ryu_id, fresh_name))
+
+                # Check if internal name/id changed (Reshuffle happened)
+                if fresh_name != old_name or fresh_ryu_id != old_ryu_id:
+                    grid_needs_update = True
+            else:
+                # Disconnected -> Drop from list (Slide Up)
+                dropped_info.append((i, old_name))
+                grid_needs_update = True
+
+        # Show Toast for dropped controllers
+        if dropped_info:
+            p_num, d_name = dropped_info[0]
+            clean_name = re.sub(r'\s*\(\d+\)$', '', d_name)
+            self.show_toast(f"⚠ Player {p_num+1} Disconnected ({clean_name})")
+
+        # Apply Updates
+        if grid_needs_update or len(new_assignments) != len(self.assignments):
+            self.assignments = new_assignments
+            self.refresh_grid()
 
         event = sdl2.SDL_Event()
         while sdl2.SDL_PollEvent(ctypes.byref(event)) != 0:
@@ -386,6 +455,9 @@ class RyujinxLauncherApp:
                 # --- ACTIVE SLOT ---
                 _, _, display_name = self.assignments[i]
                 
+                # Clean name (remove index for display)
+                clean_name = re.sub(r'\s*\(\d+\)$', '', display_name)
+
                 # Active: Blue Border, Dark BG
                 card.config(bg=COLOR_BG_CARD, highlightbackground=COLOR_NEON_BLUE, highlightcolor=COLOR_NEON_BLUE)
                 
@@ -393,7 +465,7 @@ class RyujinxLauncherApp:
                 lbl_num.config(bg=COLOR_BG_CARD, fg=COLOR_NEON_BLUE)
                 
                 # Name (Centered Top Middle)
-                short_name = display_name
+                short_name = clean_name
                 if len(short_name) > 25: short_name = short_name[:23] + ".."
                 
                 # Move Name Up (rely=0.4) and make it Big & Blue
