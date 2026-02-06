@@ -33,6 +33,7 @@ import xml.etree.ElementTree as ET
 import copy
 import re
 import time
+import random
 
 # ============================================================================
 # SECTION 1: HI-DPI DISPLAY SUPPORT
@@ -223,6 +224,13 @@ COLOR_NEON_RED = "#FF3C28"      # Warning color (disconnect/remove)
 COLOR_TEXT_WHITE = "#EDEDED"    # Primary text
 COLOR_TEXT_DIM = "#666666"      # Inactive/placeholder text
 
+PASTEL_POOL = [
+    "#00FF00", "#32CD32", "#98FB98", "#006400", "#FFFF00",  # Lime, LimeGreen, Mint, Forest, Yellow
+    "#FFD700", "#F0E68C", "#FFA500", "#FF8C00", "#D2691E",  # Gold, Khaki, Orange, DarkOrange, Chocolate
+    "#FFDAB9", "#800080", "#DA70D6", "#9400D3", "#FF00FF",  # Peach, Purple, Orchid, Violet, Magenta
+    "#FF69B4", "#FFC0CB", "#FFFFFF", "#00FFFF", "#808080"   # HotPink, SoftPink, White, Cyan, Gray
+]
+
 # ============================================================================
 # SECTION 8: MAIN APPLICATION CLASS
 # ============================================================================
@@ -256,13 +264,16 @@ class RyujinxLauncherApp:
             messagebox.showerror("Driver Error", f"Failed to load SDL2 driver.\n{e}")
 
         # State management
-        self.controllers = {}           # {instance_id: SDL_GameController}
-        self.assignments = []           # [(hid_path, display_name), ...] - Player order
-        self.hardware_map = {}          # {instance_id: (hid_path, display_name)} - Currently connected
-        self.alert_mode = None          # Current alert type (if any)
-        self.alert_frame = None         # Alert dialog container
-        self.ryujinx_process = None     # Ryujinx subprocess handle
-        self.toast_job = None           # Toast notification timer
+        self.controllers = {}               # {instance_id: SDL_GameController}
+        self.assignments = []               # [(hid_path, display_name), ...] - Player order
+        self.hardware_map = {}              # {instance_id: (hid_path, display_name)} - Currently connected
+        self.color_pool = list(PASTEL_POOL) # Copy the pool to modify it locally
+        random.shuffle(self.color_pool)     # Shuffle the color pool
+        self.hid_colors = {}                # Dictionary to remember {hid_path: color_hex}
+        self.alert_mode = None              # Current alert type (if any)
+        self.alert_frame = None             # Alert dialog container
+        self.ryujinx_process = None         # Ryujinx subprocess handle
+        self.toast_job = None               # Toast notification timer
         self.returning_to_launcher = False  # Flag for kill→restart flow
 
         # Load existing controller mapping template from Config.json
@@ -730,6 +741,24 @@ class RyujinxLauncherApp:
     # ========================================================================
     # UI UPDATE METHODS
     # ========================================================================
+    def get_assigned_color(self, hid_path):
+        """
+        Returns the persistent color for a specific controller HID.
+        If the controller hasn't been seen before, assigns a new color from the pool.
+        """
+        # 1. Check if we already assigned a color to this HID earlier in the session
+        if hid_path in self.hid_colors:
+            return self.hid_colors[hid_path]
+
+        # 2. If the pool is empty (more than 20 controllers?), recycle the list
+        if not self.color_pool:
+            self.color_pool = list(PASTEL_POOL)
+
+        # 3. Assign the next available color
+        new_color = self.color_pool.pop(0)
+        self.hid_colors[hid_path] = new_color
+        return new_color
+
     def refresh_grid(self):
         """Update all player slot cards to reflect current assignments."""
         s = self.scale
@@ -741,48 +770,49 @@ class RyujinxLauncherApp:
                 # ============================================================
                 # ACTIVE SLOT (Controller assigned)
                 # ============================================================
-                _, display_name = self.assignments[i]
+                hid_path, display_name = self.assignments[i]
 
-                # Remove trailing index suffix if present (e.g., "Xbox Controller (1)" → "Xbox Controller")
+                # --- NEW: Get the sticky pastel color ---
+                active_color = self.get_assigned_color(hid_path)
+                # ----------------------------------------
+
+                # Remove trailing index suffix
                 clean_name = re.sub(r'\s*\(\d+\)$', '', display_name)
 
-                # Blue border indicates active assignment
+                # Update Card Border (Use active_color)
                 card.config(
                     bg=COLOR_BG_CARD,
-                    highlightbackground=COLOR_NEON_BLUE,
-                    highlightcolor=COLOR_NEON_BLUE
+                    highlightbackground=active_color,  # Changed from NEON_BLUE
+                    highlightcolor=active_color        # Changed from NEON_BLUE
                 )
 
-                # Player number in blue
-                lbl_num.config(bg=COLOR_BG_CARD, fg=COLOR_NEON_BLUE)
+                # Update Player Number Color (Use active_color)
+                lbl_num.config(bg=COLOR_BG_CARD, fg=active_color)
 
-                # Controller name displayed prominently
+                # Update Name Text Color (Use active_color)
                 lbl_status.place(relx=0.5, rely=0.25, anchor="center")
                 lbl_status.config(
                     text=clean_name,
                     bg=COLOR_BG_CARD,
-                    fg=COLOR_NEON_BLUE,
+                    fg=active_color,                   # Changed from NEON_BLUE
                     font=("Segoe UI", int(12*s), "bold")
                 )
 
-                # Show disconnect hint
+                # Show disconnect hint (Keep Red for "Danger/Action")
                 lbl_disc.place(relx=0.5, rely=0.75, anchor="center")
                 lbl_disc.config(bg=COLOR_BG_CARD, fg=COLOR_NEON_RED)
+
             else:
                 # ============================================================
                 # INACTIVE SLOT (No controller assigned)
                 # ============================================================
-                # Gray border (invisible against background)
+                # (This part remains exactly the same as your original code)
                 card.config(
                     bg=COLOR_BG_CARD,
                     highlightbackground=COLOR_BG_CARD,
                     highlightcolor=COLOR_BG_CARD
                 )
-
-                # Dimmed player number
                 lbl_num.config(bg=COLOR_BG_CARD, fg="#444444")
-
-                # Centered connection prompt
                 lbl_status.place(relx=0.5, rely=0.5, anchor="center")
                 lbl_status.config(
                     text="PRESS Ⓐ CONNECT",
@@ -790,8 +820,6 @@ class RyujinxLauncherApp:
                     fg=COLOR_TEXT_DIM,
                     font=("Segoe UI", int(12*s), "bold")
                 )
-
-                # Hide disconnect hint
                 lbl_disc.place_forget()
 
     # ========================================================================
