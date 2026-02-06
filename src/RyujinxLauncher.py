@@ -7,7 +7,8 @@ from tkinter import messagebox
 import ctypes
 import xml.etree.ElementTree as ET
 import copy
-import re # Only new import needed for cleaning name display
+import re
+import time
 
 # --- 1. HI-DPI FIX ---
 try:
@@ -17,18 +18,14 @@ except Exception:
         ctypes.windll.user32.SetProcessDPIAware()
     except: pass
 
-# --- 2. SETUP ---
+# --- 2. SETUP & PATH LOGIC ---
 current_script_dir = os.path.dirname(os.path.abspath(__file__))
 base_path = current_script_dir
 
-# Force SDL2 to look in the script's directory
-os.environ["PYSDL2_DLL_PATH"] = base_path
-
-# --- 3. PATH LOGIC ---
 # Default to current directory
 ryujinx_dir = base_path 
 
-# Check for override config file
+# 1. READ CONFIG FIRST
 path_config_file = os.path.join(current_script_dir, "RyujinxPath.config")
 if os.path.exists(path_config_file):
     try:
@@ -38,7 +35,11 @@ if os.path.exists(path_config_file):
                 ryujinx_dir = custom_path
     except: pass
 
-# --- 4. PLATFORM CONFIG ---
+# 2. NOW TELL PYSDL2 WHERE TO LOOK
+# We point it to the Ryujinx directory we just found, NOT just the script dir
+os.environ["PYSDL2_DLL_PATH"] = ryujinx_dir
+
+# --- 3. PLATFORM CONFIG ---
 if sys.platform == "win32":
     DEFAULT_LIB = "SDL2.dll"
     TARGET_EXE = "Ryujinx.exe"
@@ -57,7 +58,9 @@ else:
     TARGET_EXE = "Ryujinx"
     CONFIG_FILE = os.path.expanduser("~/.config/Ryujinx/Config.json")
 
-# --- 5. DRIVER LOADING ---
+# --- 4. DRIVER CHECK ---
+# (PySDL2 will now auto-find the DLL because of the environ variable above,
+# but we keep this XML logic just to find the library name if needed)
 xml_config_path = os.path.join(ryujinx_dir, "Ryujinx.SDL2.Common.dll.config")
 lib_name = None
 if os.path.exists(xml_config_path):
@@ -72,16 +75,15 @@ if os.path.exists(xml_config_path):
     except: pass
 if not lib_name: lib_name = DEFAULT_LIB
 
-# Check for driver in Ryujinx dir first, then Launcher dir
-driver_path = os.path.join(ryujinx_dir, lib_name)
-if not os.path.exists(driver_path):
-    driver_path = os.path.join(current_script_dir, lib_name)
-
 try:
     import sdl2
     import sdl2.ext
 except ImportError:
     messagebox.showerror("Error", "PySDL2 not installed.\nRun: pip install pysdl2")
+    sys.exit(1)
+except Exception as e:
+    # If it still fails, it means the DLL is missing from the Ryujinx folder
+    messagebox.showerror("DLL Error", f"Could not find {lib_name} in:\n{ryujinx_dir}\n\nError: {e}")
     sys.exit(1)
 
 # --- MAPPING TEMPLATE (A=A, B=B) ---
@@ -148,13 +150,13 @@ class RyujinxLauncherApp:
             messagebox.showerror("Driver Error", f"Failed to load SDL2 driver.\n{e}")
         
         self.controllers = {} 
-        self.assignments = [] 
-        self.hardware_map = {} 
-        self.alert_mode = None 
+        self.assignments = [] # [(path_str, display_name), ...]
+        self.hardware_map = {} # {instance_id: (path_str, display_name)}
+        self.alert_mode = None
         self.alert_frame = None
         self.ryujinx_process = None
         self.toast_job = None
-        self.last_joystick_count = -1 # Track for Flush Logic
+        self.returning_to_launcher = False
 
         self.master_template = self.load_config_data(CONFIG_FILE)
         if self.master_template == FALLBACK_TEMPLATE:
@@ -268,7 +270,7 @@ class RyujinxLauncherApp:
     def handle_enter_key(self):
         if self.alert_mode == "LAUNCH": self.force_launch()
         elif self.alert_mode == "EXIT": self.root.destroy()
-        elif self.alert_mode == "KILL_CONFIRM": self.perform_kill()
+        elif self.alert_mode == "KILL_CONFIRM": self.kill_and_quit()
 
     def handle_esc_key(self):
         if self.alert_mode: self.close_alert()
@@ -280,56 +282,69 @@ class RyujinxLauncherApp:
         self.root.quit()
         sys.exit()
 
+    # --- NEW HELPERS FOR KILL MENU ---
+    def kill_and_quit(self):
+        if self.ryujinx_process:
+            self.ryujinx_process.kill()
+        self.root.quit()
+        sys.exit()
+
+    def kill_and_restart(self):
+        self.returning_to_launcher = True
+
+        time.sleep(0.1)
+
+        if self.ryujinx_process:
+            self.ryujinx_process.kill()
+        self.ryujinx_process = None
+
+        # --- RESET STATE ---
+        self.assignments = [] # Wipe everything
+        self.refresh_grid()
+        self.close_alert()
+        self.root.deiconify()
+        self.root.state('normal') # Ensure window is back
+    # ---------------------------------
+
     def update_loop(self):
         # --- BACKGROUND MONITORING ---
         if self.ryujinx_process and not self.alert_mode:
             if self.ryujinx_process.poll() is not None:
-                # Ryujinx closed normally
-                self.root.quit()
-                sys.exit()
+                # Ryujinx closed normally, Reset State
+                if self.returning_to_launcher:
+                    print("[SYSTEM] Ryujinx Closed. Resetting.")
+                    self.assignments = [] # Wipe assignments
+                    self.refresh_grid()
+                    self.root.deiconify()
+                    self.root.state('normal')
+                    self.ryujinx_process = None
+                else:
+                    # Ryujinx closed externally (Quit or Crashed)
+                    print("[SYSTEM] Ryujinx Closed Externally. Terminating Launcher.")
+                    self.root.quit()
+                    sys.exit()
 
-            # Check Kill Combo: Back + L + R on PLAYER 1 ONLY
+            # --- GLOBAL KILL SWITCH (ANY CONTROLLER) ---
             kill_combo = False
-
-            # Only proceed if we have at least 1 player assigned
-            if len(self.assignments) > 0:
-                p1_instance_id = self.assignments[0][0] # Get ID of Player 1
-
-                # Verify Player 1 is still connected
-                if p1_instance_id in self.controllers:
-                    ctrl = self.controllers[p1_instance_id]
-
-                    if (sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_BACK) and
-                        sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_LEFTSHOULDER) and
-                        sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)):
-                        kill_combo = True
+            for ctrl in self.controllers.values():
+                if (sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_BACK) and
+                    sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_LEFTSHOULDER) and
+                    sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)):
+                    kill_combo = True
+                    break # Trigger found, stop searching
 
             if kill_combo:
-                self.root.deiconify() # Bring GUI back
+                self.root.deiconify()
                 self.show_alert("KILL_CONFIRM")
                 self.root.after(50, self.update_loop)
                 return
         # -----------------------------
 
-        # MODIFIED: Scan Logic with Index Reshuffle Support
-        # Check if hardware count changed. If so, FLUSH cache to force re-order.
-        current_count = sdl2.SDL_NumJoysticks()
-        is_hardware_change = False # Print flag
-
-        if current_count != self.last_joystick_count:
-            print(f"\n[SYSTEM] Hardware Change Detected: {self.last_joystick_count} -> {current_count}")
-            is_hardware_change = True
-            self.last_joystick_count = current_count
-            # Force close all to reset internal SDL ordering if possible
-            for c in self.controllers.values():
-                sdl2.SDL_GameControllerClose(c)
-            self.controllers.clear()
-
-        guid_counters = {} 
+        num_joysticks = sdl2.SDL_NumJoysticks()
         self.hardware_map.clear()
         
-        # Iterate fresh list
-        for i in range(current_count):
+        # Build Map
+        for i in range(num_joysticks):
             if not sdl2.SDL_IsGameController(i): continue
             ctrl = sdl2.SDL_GameControllerOpen(i)
             if ctrl:
@@ -339,78 +354,59 @@ class RyujinxLauncherApp:
                     self.controllers[instance_id] = ctrl
                 
                 raw_name = sdl2.SDL_GameControllerName(ctrl).decode()
-                guid_obj = sdl2.SDL_JoystickGetGUID(joy)
-                psz_guid = (ctypes.c_char * 33)()
-                sdl2.SDL_JoystickGetGUIDString(guid_obj, psz_guid, 33)
-                raw_guid_str = psz_guid.value.decode()
-                base_guid = self.ryujinx_guid_fix(raw_guid_str)
-
-                # Internal index tracking to handle "Xbox (0)" vs "Xbox (1)"
-                # This recalculates 0/1 based on current order
-                current_idx = guid_counters.get(base_guid, 0)
-                final_hw_id = f"{current_idx}-{base_guid}"
-                final_hw_name = f"{raw_name} ({current_idx})"
                 
-                self.hardware_map[instance_id] = (final_hw_id, final_hw_name)
-                guid_counters[base_guid] = current_idx + 1
+                # GET HID PATH (The Source of Truth)
+                try:
+                    path_bytes = sdl2.SDL_GameControllerPath(ctrl)
+                    hid_path = path_bytes.decode() if path_bytes else f"UNK_{instance_id}"
+                except:
+                    hid_path = f"UNK_{instance_id}"
 
-        # Debug Print if Hardware Changed
-        if is_hardware_change:
-            print("--- CURRENT DEVICE LIST ---")
-            for inst_id, (ryu_id, ryu_name) in self.hardware_map.items():
-                print(f"ID: {inst_id} | Name: {ryu_name} | GUID: {ryu_id}")
-            print("---------------------------\n")
+                self.hardware_map[instance_id] = (hid_path, raw_name)
 
-        # MODIFIED: Sync Assignments (Auto-Promote)
+        # --- MENU MODE (ALWAYS ACTIVE) ---
         new_assignments = []
-        dropped_info = [] # Store index and name
-        grid_needs_update = False
+        dropped_names = []
 
-        for i, (instance_id, old_ryu_id, old_name) in enumerate(self.assignments):
-            if instance_id in self.hardware_map:
-                # Controller still present, update data
-                fresh_ryu_id, fresh_name = self.hardware_map[instance_id]
-                new_assignments.append((instance_id, fresh_ryu_id, fresh_name))
+        current_connected_paths = set()
+        for inst_id in self.hardware_map:
+            path, _ = self.hardware_map[inst_id]
+            current_connected_paths.add(path)
 
-                # Check if internal name/id changed (Reshuffle happened)
-                if fresh_name != old_name or fresh_ryu_id != old_ryu_id:
-                    grid_needs_update = True
+        # Remove disconnected, Slide Up
+        for path, name in self.assignments:
+            if path in current_connected_paths:
+                new_assignments.append((path, name))
             else:
-                # Disconnected -> Drop from list (Slide Up)
-                dropped_info.append((i, old_name))
-                grid_needs_update = True
+                dropped_names.append(name)
 
-        # Show Toast for dropped controllers
-        if dropped_info:
-            p_num, d_name = dropped_info[0]
-            clean_name = re.sub(r'\s*\(\d+\)$', '', d_name)
-            self.show_toast(f"⚠ Player {p_num+1} Disconnected ({clean_name})")
-
-        # Apply Updates
-        if grid_needs_update or len(new_assignments) != len(self.assignments):
+        if len(new_assignments) != len(self.assignments):
             self.assignments = new_assignments
             self.refresh_grid()
+            if dropped_names:
+                self.show_toast(f"⚠ {dropped_names[0]} Disconnected")
 
         event = sdl2.SDL_Event()
         while sdl2.SDL_PollEvent(ctypes.byref(event)) != 0:
             if event.type == sdl2.SDL_CONTROLLERBUTTONDOWN:
                 if self.alert_mode:
-                    if event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_A:
-                        if self.alert_mode == "LAUNCH": self.force_launch()
-                        elif self.alert_mode == "EXIT": self.root.destroy()
-                        elif self.alert_mode == "KILL_CONFIRM": self.perform_kill()
-                    elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_B:
-                        if self.alert_mode == "KILL_CONFIRM":
+                    if self.alert_mode == "KILL_CONFIRM":
+                        if event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_A:
+                            self.kill_and_restart()
+                        elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_Y:
+                            self.kill_and_quit()
+                        elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_B:
                             self.close_alert()
-                            self.root.withdraw() # Go back to background
-                        else:
+                            self.root.withdraw() # Cancel: Go back to hiding
+                    else:
+                        if event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_A:
+                            if self.alert_mode == "LAUNCH": self.force_launch()
+                            elif self.alert_mode == "EXIT": self.root.destroy()
+                            elif self.alert_mode == "KILL_CONFIRM": self.perform_kill()
+                        elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_B:
                             self.close_alert()
                 else:
-                    # --- ADDED SAFETY CHECK ---
-                    # If game is running, IGNORE all standard inputs
-                    if self.ryujinx_process:
-                        continue
-                    # ---------------------------
+                    if self.ryujinx_process: continue
 
                     if event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_A:
                         self.assign_player(event.cbutton.which)
@@ -427,19 +423,26 @@ class RyujinxLauncherApp:
         self.root.after(50, self.update_loop)
 
     def assign_player(self, instance_id):
-        for assigned_instance, _, _ in self.assignments:
-            if assigned_instance == instance_id: return 
+        if instance_id not in self.hardware_map: return
+
+        target_path, display_name = self.hardware_map[instance_id]
+
+        # Check duplicate
+        for path, _ in self.assignments:
+            if path == target_path: return
+
         if len(self.assignments) >= 8: return 
 
-        if instance_id in self.hardware_map:
-            ryujinx_id, display_name = self.hardware_map[instance_id]
-            self.assignments.append((instance_id, ryujinx_id, display_name))
-            self.refresh_grid()
+        self.assignments.append((target_path, display_name))
+        self.refresh_grid()
 
     def remove_player(self, instance_id):
+        if instance_id not in self.hardware_map: return
+        target_path, _ = self.hardware_map[instance_id]
+
         found_index = -1
-        for i, (assigned_instance, _, _) in enumerate(self.assignments):
-            if assigned_instance == instance_id:
+        for i, (path, _) in enumerate(self.assignments):
+            if path == target_path:
                 found_index = i
                 break
         if found_index != -1:
@@ -453,38 +456,25 @@ class RyujinxLauncherApp:
             
             if i < len(self.assignments):
                 # --- ACTIVE SLOT ---
-                _, _, display_name = self.assignments[i]
+                _, display_name = self.assignments[i]
                 
                 # Clean name (remove index for display)
                 clean_name = re.sub(r'\s*\(\d+\)$', '', display_name)
 
-                # Active: Blue Border, Dark BG
                 card.config(bg=COLOR_BG_CARD, highlightbackground=COLOR_NEON_BLUE, highlightcolor=COLOR_NEON_BLUE)
-                
-                # P# Label
                 lbl_num.config(bg=COLOR_BG_CARD, fg=COLOR_NEON_BLUE)
                 
-                # Name (Centered Top Middle)
-                short_name = clean_name
-                if len(short_name) > 25: short_name = short_name[:23] + ".."
-                
-                # Move Name Up (rely=0.4) and make it Big & Blue
                 lbl_status.place(relx=0.5, rely=0.25, anchor="center")
-                lbl_status.config(text=short_name, bg=COLOR_BG_CARD, fg=COLOR_NEON_BLUE, font=("Segoe UI", int(12*s), "bold"))
+                lbl_status.config(text=clean_name, bg=COLOR_BG_CARD, fg=COLOR_NEON_BLUE, font=("Segoe UI", int(12*s), "bold"))
                 
-                # Disconnect (Centered Bottom)
                 lbl_disc.place(relx=0.5, rely=0.75, anchor="center")
                 lbl_disc.config(bg=COLOR_BG_CARD, fg=COLOR_NEON_RED)
                 
             else:
                 # --- INACTIVE SLOT ---
-                # Inactive: Dark Border (Invisible)
                 card.config(bg=COLOR_BG_CARD, highlightbackground=COLOR_BG_CARD, highlightcolor=COLOR_BG_CARD)
-                
-                # P# Label
                 lbl_num.config(bg=COLOR_BG_CARD, fg="#444444")
                 
-                # Status Label (Centered Middle)
                 lbl_status.place(relx=0.5, rely=0.5, anchor="center")
                 lbl_status.config(text="PRESS Ⓐ CONNECT", bg=COLOR_BG_CARD, fg=COLOR_TEXT_DIM, font=("Segoe UI", int(12*s), "bold"))
                 
@@ -531,11 +521,17 @@ class RyujinxLauncherApp:
 
         elif mode == "KILL_CONFIRM":
             tk.Label(box, text="KILL GAME?", font=("Segoe UI", int(26*s), "bold"), bg="#1E1E1E", fg=COLOR_TEXT_WHITE).pack(pady=(int(40*s), int(10*s)))
-            tk.Label(box, text="Force close Ryujinx and return to desktop?", font=("Segoe UI", int(14*s)), bg="#1E1E1E", fg="#BBBBBB").pack(pady=int(5*s))
+            tk.Label(box, text="How would you like to proceed?", font=("Segoe UI", int(14*s)), bg="#1E1E1E", fg="#BBBBBB").pack(pady=int(5*s))
+
             btn_frame = tk.Frame(box, bg="#1E1E1E")
-            btn_frame.pack(pady=int(40*s))
-            tk.Label(btn_frame, text="Ⓐ YES", font=("Segoe UI", int(12*s), "bold"), bg="#1E1E1E", fg=COLOR_NEON_BLUE).pack(side="left", padx=int(20*s))
-            tk.Label(btn_frame, text="Ⓑ NO", font=("Segoe UI", int(12*s), "bold"), bg="#1E1E1E", fg=COLOR_NEON_RED).pack(side="left", padx=int(20*s))
+            btn_frame.pack(pady=int(30*s))
+
+            # RESTART (LAUNCHER)
+            tk.Label(btn_frame, text="Ⓐ LAUNCHER", font=("Segoe UI", int(12*s), "bold"), bg="#1E1E1E", fg=COLOR_NEON_BLUE).pack(side="left", padx=int(15*s))
+            # EXIT (DESKTOP)
+            tk.Label(btn_frame, text="Ⓨ DESKTOP", font=("Segoe UI", int(12*s), "bold"), bg="#1E1E1E", fg="#FFCC00").pack(side="left", padx=int(15*s))
+            # CANCEL
+            tk.Label(btn_frame, text="Ⓑ CANCEL", font=("Segoe UI", int(12*s), "bold"), bg="#1E1E1E", fg=COLOR_NEON_RED).pack(side="left", padx=int(15*s))
 
     def close_alert(self):
         self.alert_mode = None
@@ -544,21 +540,70 @@ class RyujinxLauncherApp:
             self.alert_frame = None
 
     def save_config(self):
+        # 1. FLUSH AND RESCAN to match OS Order
+        for c in self.controllers.values():
+            sdl2.SDL_GameControllerClose(c)
+        self.controllers.clear()
+
+        sdl2.SDL_QuitSubSystem(sdl2.SDL_INIT_JOYSTICK | sdl2.SDL_INIT_GAMECONTROLLER)
+        sdl2.SDL_Init(sdl2.SDL_INIT_JOYSTICK | sdl2.SDL_INIT_GAMECONTROLLER)
+
+        # 2. Build New Map from FRESH Scan
+        final_hw_list = []
+        num = sdl2.SDL_NumJoysticks()
+        guid_counters = {}
+
+        for i in range(num):
+            if not sdl2.SDL_IsGameController(i): continue
+            ctrl = sdl2.SDL_GameControllerOpen(i)
+            if ctrl:
+                # We need GUID and Path
+                joy = sdl2.SDL_GameControllerGetJoystick(ctrl)
+
+                # Get GUID
+                guid_obj = sdl2.SDL_JoystickGetGUID(joy)
+                psz_guid = (ctypes.c_char * 33)()
+                sdl2.SDL_JoystickGetGUIDString(guid_obj, psz_guid, 33)
+                raw_guid_str = psz_guid.value.decode()
+                base_guid = self.ryujinx_guid_fix(raw_guid_str)
+
+                # Get Path (Key)
+                try:
+                    p = sdl2.SDL_GameControllerPath(ctrl)
+                    path = p.decode() if p else ""
+                except: path = ""
+
+                # Calculate Index
+                idx = guid_counters.get(base_guid, 0)
+                final_id = f"{idx}-{base_guid}"
+                guid_counters[base_guid] = idx + 1
+
+                final_hw_list.append({
+                    "path": path,
+                    "ryu_id": final_id,
+                    "name": sdl2.SDL_GameControllerName(ctrl).decode()
+                })
+                sdl2.SDL_GameControllerClose(ctrl)
+
+        # 3. Match Assignments (Paths) -> New Configs
         if not os.path.exists(CONFIG_FILE): return
         try:
             with open(CONFIG_FILE, 'r') as f: data = json.load(f)
         except: return
 
         new_input = []
-        for i in range(len(self.assignments)):
-            _, ryujinx_id, display_name = self.assignments[i]
-            entry = copy.deepcopy(self.master_template)
-            entry["id"] = ryujinx_id 
-            entry["name"] = display_name
-            entry["player_index"] = f"Player{i+1}"
-            entry["backend"] = "GamepadSDL2"
-            entry["controller_type"] = "ProController"
-            new_input.append(entry)
+        for i, (assigned_path, _) in enumerate(self.assignments):
+            # Find this path in the FRESH list
+            matched_hw = next((x for x in final_hw_list if x["path"] == assigned_path), None)
+
+            if matched_hw:
+                entry = copy.deepcopy(self.master_template)
+                entry["id"] = matched_hw["ryu_id"]
+                entry["name"] = matched_hw["name"]
+                entry["player_index"] = f"Player{i+1}"
+                entry["backend"] = "GamepadSDL2"
+                entry["controller_type"] = "ProController"
+                new_input.append(entry)
 
         data["input_config"] = new_input
         try:
@@ -569,6 +614,7 @@ class RyujinxLauncherApp:
     def force_launch(self):
         self.save_config()
         self.root.withdraw()
+        self.returning_to_launcher = False
         
         exe_path = os.path.join(ryujinx_dir, TARGET_EXE)
         if not os.path.exists(exe_path):
