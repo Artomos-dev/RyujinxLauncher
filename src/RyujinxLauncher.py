@@ -113,11 +113,11 @@ COLOR = {
     'ALERT_YELLOW': '#FFCC00',
 }
 
-PASTEL_POOL = [
-    "#00FF00", "#32CD32", "#98FB98", "#006400", "#FFFF00",  # Lime, LimeGreen, Mint, Forest, Yellow
-    "#FFD700", "#F0E68C", "#FFA500", "#FF8C00", "#D2691E",  # Gold, Khaki, Orange, DarkOrange, Chocolate
-    "#FFDAB9", "#800080", "#DA70D6", "#9400D3", "#FF00FF",  # Peach, Purple, Orchid, Violet, Magenta
-    "#FF69B4", "#FFC0CB", "#FFFFFF", "#00FFFF", "#808080"   # HotPink, SoftPink, White, Cyan, Gray
+COLOR_POOL = [
+    "#00FF00", "#00FA9A", "#ADFF2F", "#7FFFD4", "#40E0D0",  # Lime, SpringGreen, GreenYellow, Aqua, Turquoise
+    "#00FFFF", "#1E90FF", "#87CEFA", "#4169E1", "#00BFFF",  # Cyan, DodgerBlue, SkyBlue, RoyalBlue, DeepSkyBlue
+    "#FF00FF", "#DA70D6", "#9370DB", "#FF69B4", "#D8BFD8",  # Magenta, Orchid, MedPurple, HotPink, Thistle
+    "#FFFF00", "#FFD700", "#F0E68C", "#FFC200", "#FFFFFF"   # Yellow, Gold, Khaki, Amber, White
 ]
 
 # ============================================================================
@@ -408,7 +408,7 @@ class RyujinxLauncherApp:
         self.controllers = {}               # {instance_id: SDL_GameController}
         self.assignments = []               # [(hid_path, display_name), ...] - Player order
         self.hardware_map = {}              # {instance_id: (hid_path, display_name)} - Currently connected
-        self.color_pool = list(PASTEL_POOL) # Copy the pool to modify it locally
+        self.color_pool = list(COLOR_POOL) # Copy the pool to modify it locally
         random.shuffle(self.color_pool)     # Shuffle the color pool
         self.hid_colors = {}                # Dictionary to remember {hid_path: color_hex}
         self.alert_mode = None              # Current alert type (if any)
@@ -681,7 +681,7 @@ class RyujinxLauncherApp:
     # ========================================================================
     # UI FEEDBACK METHODS
     # ========================================================================
-    def show_toast(self, message):
+    def show_toast(self, message, color=COLOR['NEON_RED']):
         """
         Display a temporary notification message.
 
@@ -691,6 +691,7 @@ class RyujinxLauncherApp:
         if self.toast_job:
             self.root.after_cancel(self.toast_job)
 
+        self.lbl_toast.config(fg=color)
         self.lbl_toast.config(text=message)
         self.lbl_toast.place(relx=0.5, rely=UI['TOAST_POSITION_Y'], anchor="center")
         self.toast_job = self.root.after(2000, lambda: self.lbl_toast.place_forget())
@@ -841,7 +842,7 @@ class RyujinxLauncherApp:
             if path in current_connected_paths:
                 new_assignments.append((path, name))  # Still connected, keep assignment
             else:
-                dropped_names.append(name)  # Disconnected, remove assignment
+                dropped_names.append((path,name))  # Disconnected, remove assignment
 
         # Update state if any controllers were removed
         if len(new_assignments) != len(self.assignments):
@@ -850,7 +851,7 @@ class RyujinxLauncherApp:
 
             # Show toast notification for first disconnected controller
             if dropped_names:
-                self.show_toast(f"⚠ {dropped_names[0]} Disconnected")
+                self.show_toast(f"⚠️ {dropped_names[0][1]} Disconnected!", self.hid_colors[dropped_names[0][0]])
 
         # ====================================================================
         # GAMEPAD BUTTON EVENT PROCESSING
@@ -968,7 +969,7 @@ class RyujinxLauncherApp:
 
         # 2. If the pool is empty (more than 20 controllers?), recycle the list
         if not self.color_pool:
-            self.color_pool = list(PASTEL_POOL)
+            self.color_pool = list(COLOR_POOL)
 
         # 3. Assign the next available color
         new_color = self.color_pool.pop(0)
