@@ -48,7 +48,80 @@ except Exception:
         pass  # Non-Windows or unsupported
 
 # ============================================================================
-# SECTION 2: PATH DETECTION & CONFIGURATION
+# SECTION 2: UI DESIGN VARIABLES (720p BASELINE - 1280x720)
+# ============================================================================
+# All measurements are for 1280x720 resolution at 100% DPI
+# These will be automatically scaled for other resolutions
+
+UI = {
+    # === FONTS ===
+    'FONT_FAMILY': 'Segoe UI',
+    'FONT_TITLE_SIZE': 30,          # Main title
+    'FONT_CARD_SIZE': 16,           # Player card text
+    'FONT_FOOTER_SIZE': 17,         # Footer buttons
+    'FONT_ALERT_TITLE_SIZE': 26,    # Alert dialog title
+    'FONT_ALERT_TEXT_SIZE': 17,     # Alert dialog text
+    'FONT_ALERT_BTN_SIZE': 16,      # Alert dialog buttons
+    'FONT_TOAST_SIZE': 16,          # Toast notification
+
+    # === SPACING ===
+    'PADDING_MAIN': 40,             # Main container padding
+    'PADDING_TITLE_TOP': 15,        # Title top margin
+    'PADDING_TITLE_BOTTOM': 20,     # Title bottom margin
+
+    # === PLAYER CARDS ===
+    'CARD_WIDTH': 400,              # Player card width
+    'CARD_HEIGHT': 85,              # Player card height
+    'CARD_PADDING_X': 15,           # Horizontal gap between cards
+    'CARD_PADDING_Y': 10,           # Vertical gap between cards
+    'CARD_BORDER': 2,               # Card border thickness
+    'CARD_PLAYER_NUM_X': 12,        # Player number X position
+    'CARD_PLAYER_NUM_Y': 8,         # Player number Y position
+
+    # === FOOTER ===
+    'FOOTER_HEIGHT': 60,            # Footer bar height
+    'FOOTER_GAP': 12,               # Gap between footer elements
+
+    # === ALERT DIALOG ===
+    'ALERT_BOX_WIDTH': 500,         # Alert dialog width
+    'ALERT_BOX_HEIGHT': 240,        # Alert dialog height
+    'ALERT_BOX_BORDER': 2,          # Alert dialog border
+    'ALERT_TITLE_PADDING_TOP': 30,  # Alert title top padding
+    'ALERT_TITLE_PADDING_BOTTOM': 8,# Alert title bottom padding
+    'ALERT_TEXT_PADDING': 4,        # Alert text padding
+    'ALERT_BTN_PADDING_TOP': 30,    # Alert buttons top padding
+    'ALERT_BTN_PADDING_X': 15,      # Alert buttons horizontal padding
+
+    # === TOAST ===
+    'TOAST_POSITION_Y': 0.95,        # Toast Y position (relative)
+}
+
+# ============================================================================
+# SECTION 3: COLOR THEME
+# ============================================================================
+COLOR = {
+    'BG_DARK': '#0F0F0F',
+    'BG_CARD': '#1A1A1A',
+    'NEON_BLUE': '#0AB9E6',
+    'NEON_RED': '#FF3C28',
+    'TEXT_WHITE': '#EDEDED',
+    'TEXT_DIM': '#666666',
+    'FOOTER_BG': '#111111',
+    'ALERT_BG': '#000000',
+    'ALERT_BOX_BG': '#1E1E1E',
+    'ALERT_TEXT_DIM': '#BBBBBB',
+    'ALERT_YELLOW': '#FFCC00',
+}
+
+PASTEL_POOL = [
+    "#00FF00", "#32CD32", "#98FB98", "#006400", "#FFFF00",  # Lime, LimeGreen, Mint, Forest, Yellow
+    "#FFD700", "#F0E68C", "#FFA500", "#FF8C00", "#D2691E",  # Gold, Khaki, Orange, DarkOrange, Chocolate
+    "#FFDAB9", "#800080", "#DA70D6", "#9400D3", "#FF00FF",  # Peach, Purple, Orchid, Violet, Magenta
+    "#FF69B4", "#FFC0CB", "#FFFFFF", "#00FFFF", "#808080"   # HotPink, SoftPink, White, Cyan, Gray
+]
+
+# ============================================================================
+# SECTION 4: PATH DETECTION & CONFIGURATION
 # ============================================================================
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -92,7 +165,7 @@ if os.path.exists(path_config_file):
 os.environ["PYSDL2_DLL_PATH"] = ryujinx_dir
 
 # ============================================================================
-# SECTION 3: PLATFORM-SPECIFIC CONFIGURATION
+# SECTION 5: PLATFORM-SPECIFIC CONFIGURATION
 # ============================================================================
 # Determine correct file paths and executable names based on OS
 if sys.platform == "win32":
@@ -121,7 +194,7 @@ else:  # Linux
     CONFIG_FILE = os.path.expanduser("~/.config/Ryujinx/Config.json")
 
 # ============================================================================
-# SECTION 4: SDL2 DRIVER DETECTION
+# SECTION 6: SDL2 DRIVER DETECTION
 # ============================================================================
 # Read Ryujinx's XML config to find the correct SDL2 library name
 xml_config_path = os.path.join(ryujinx_dir, "Ryujinx.SDL2.Common.dll.config")
@@ -148,7 +221,7 @@ if not lib_name:
     lib_name = DEFAULT_LIB
 
 # ============================================================================
-# SECTION 5: IMPORT SDL2 LIBRARY
+# SECTION 7: IMPORT SDL2 LIBRARY
 # ============================================================================
 try:
     import sdl2
@@ -167,7 +240,7 @@ except Exception as e:
     sys.exit(1)
 
 # ============================================================================
-# SECTION 6: DEFAULT CONTROLLER MAPPING TEMPLATE
+# SECTION 8: DEFAULT CONTROLLER MAPPING TEMPLATE
 # ============================================================================
 # Fallback template if no existing config found (matches Nintendo Pro Controller layout)
 FALLBACK_TEMPLATE = {
@@ -238,24 +311,41 @@ FALLBACK_TEMPLATE = {
 }
 
 # ============================================================================
-# SECTION 7: VISUAL THEME (NINTENDO SWITCH INSPIRED)
+# SECTION 9: DYNAMIC SCALING UTILITY
 # ============================================================================
-COLOR_BG_DARK = "#0F0F0F"       # Main background
-COLOR_BG_CARD = "#1A1A1A"       # Card background (empty/active slots)
-COLOR_NEON_BLUE = "#0AB9E6"     # Highlight color (active controllers)
-COLOR_NEON_RED = "#FF3C28"      # Warning color (disconnect/remove)
-COLOR_TEXT_WHITE = "#EDEDED"    # Primary text
-COLOR_TEXT_DIM = "#666666"      # Inactive/placeholder text
+def calculate_scale(screen_width, screen_height):
+    """
+    Calculate uniform scale factor based on screen resolution.
+    Baseline: 1280x720 (720p, 16:9)
 
-PASTEL_POOL = [
-    "#00FF00", "#32CD32", "#98FB98", "#006400", "#FFFF00",  # Lime, LimeGreen, Mint, Forest, Yellow
-    "#FFD700", "#F0E68C", "#FFA500", "#FF8C00", "#D2691E",  # Gold, Khaki, Orange, DarkOrange, Chocolate
-    "#FFDAB9", "#800080", "#DA70D6", "#9400D3", "#FF00FF",  # Peach, Purple, Orchid, Violet, Magenta
-    "#FF69B4", "#FFC0CB", "#FFFFFF", "#00FFFF", "#808080"   # HotPink, SoftPink, White, Cyan, Gray
-]
+    Returns uniform scale that maintains aspect ratio
+    """
+    BASE_WIDTH = 1280
+    BASE_HEIGHT = 720
+
+    # Calculate scale based on both dimensions
+    width_scale = screen_width / BASE_WIDTH
+    height_scale = screen_height / BASE_HEIGHT
+
+    # Use the smaller scale to ensure everything fits
+    scale = min(width_scale, height_scale)
+
+    # Minimum scale for very small screens
+    if scale < 0.2:
+        scale = 0.2
+
+    return scale
+
+def scale_value(value, scale):
+    """Scale a single value"""
+    return int(value * scale)
+
+def scale_font(size, scale):
+    """Scale font size with minimum of 10pt"""
+    return max(10, int(size * scale))
 
 # ============================================================================
-# SECTION 8: MAIN APPLICATION CLASS
+# SECTION 10: MAIN APPLICATION CLASS
 # ============================================================================
 class RyujinxLauncherApp:
     """
@@ -268,8 +358,9 @@ class RyujinxLauncherApp:
         """Initialize the launcher UI and controller subsystem."""
         self.root = root
         self.root.title("Ryujinx Launcher")
-        self.root.configure(bg=COLOR_BG_DARK)
+        self.root.configure(bg=COLOR['BG_DARK'])
         self.root.attributes('-fullscreen', True)
+        self.root.tk.call('tk', 'scaling', 1.3333)
 
         # Update 1: Define the specific filenames from your assets folder
         ico_path = resource_path(os.path.join("assets", "RyujinxLauncherIcon.ico"))
@@ -298,9 +389,14 @@ class RyujinxLauncherApp:
         self.root.bind("<Escape>", lambda e: self.handle_esc_key())
 
         # Calculate UI scaling based on screen resolution
-        screen_height = self.root.winfo_screenheight()
-        self.scale = max(1.0, screen_height / 1080.0)
-        s = self.scale
+        self.root.update_idletasks()
+        self.screen_width = self.root.winfo_screenwidth()
+        self.screen_height = self.root.winfo_screenheight()
+        self.scale = calculate_scale(self.screen_width, self.screen_height)
+        self.resize_job = None
+
+        # Bind the configure event to detect resolution/scale changes
+        self.root.bind("<Configure>", self.on_window_configure)
 
         # Initialize SDL2 controller subsystem
         try:
@@ -329,11 +425,81 @@ class RyujinxLauncherApp:
             if os.path.exists(backup_path):
                 self.master_template = self.load_config_data(backup_path)
 
-        # ====================================================================
-        # UI LAYOUT CONSTRUCTION
-        # ====================================================================
-        self.main_container = tk.Frame(root, bg=COLOR_BG_DARK)
-        self.main_container.pack(expand=True, fill="both", padx=int(50*s), pady=int(50*s))
+        # Build UI
+        self.build_ui()
+
+        # Start main loop
+        self.update_loop()
+
+    def on_window_configure(self, event):
+        """
+        Handle window resize events (resolution or scale change).
+        Uses a timer (debounce) to wait for the resize to finish before rebuilding UI.
+        """
+        if event.widget != self.root:
+            return
+
+        new_w = self.root.winfo_screenwidth()
+        new_h = self.root.winfo_screenheight()
+
+        # Only trigger if dimensions actually changed
+        if new_w != self.screen_width or new_h != self.screen_height:
+            # Cancel previous timer if user is still resizing/changing settings
+            if self.resize_job:
+                self.root.after_cancel(self.resize_job)
+
+            # Schedule a rebuild in 100ms
+            self.resize_job = self.root.after(100, self.perform_resize)
+
+    def perform_resize(self):
+        """
+        Actually rebuild the UI with the new scale factor.
+        """
+        self.root.tk.call('tk', 'scaling', 1.3333)
+        self.screen_width = self.root.winfo_screenwidth()
+        self.screen_height = self.root.winfo_screenheight()
+
+        # Recalculate scale
+        self.scale = calculate_scale(self.screen_width, self.screen_height)
+
+        # Destroy old UI
+        if hasattr(self, 'main_container'):
+            self.main_container.destroy()
+
+        # Destroy footer separately as it is packed to bottom
+        if hasattr(self, 'footer_frame'):
+            self.footer_frame.destroy()
+
+        # Rebuild UI elements
+        self.build_ui()
+
+        # Restore controller assignment visuals onto the new UI
+        self.refresh_grid()
+
+        if self.alert_mode:
+            # 1. Capture current mode
+            mode = self.alert_mode
+
+            # 2. Destroy the old, wrongly scaled/positioned alert frame
+            if self.alert_frame:
+                self.alert_frame.destroy()
+                self.alert_frame = None
+
+            # 3. Re-draw the alert (This forces it to the top of the stack)
+            self.show_alert(mode)
+
+    def build_ui(self):
+        """Build the entire UI using scaled values"""
+        s = self.scale
+
+        # Main container
+        self.main_container = tk.Frame(self.root, bg=COLOR['BG_DARK'])
+        self.main_container.pack(
+            expand=True,
+            fill="both",
+            padx=scale_value(UI['PADDING_MAIN'], s),
+            pady=scale_value(UI['PADDING_MAIN'], s)
+        )
 
         # Header: Title
         mode_prefix = "GAME" if len(sys.argv) > 1 else "RYUJINX"
@@ -342,55 +508,63 @@ class RyujinxLauncherApp:
         self.lbl_title = tk.Label(
             self.main_container,
             text=title_text,
-            font=("Segoe UI", int(32*s), "bold"),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_TEXT_WHITE
+            font=(UI['FONT_FAMILY'], scale_font(UI['FONT_TITLE_SIZE'], s), "bold"),
+            bg=COLOR['BG_DARK'],
+            fg=COLOR['TEXT_WHITE']
         )
-        self.lbl_title.pack(pady=(int(20*s), int(30*s)))
+        self.lbl_title.pack(
+            pady=(
+                scale_value(UI['PADDING_TITLE_TOP'], s),
+                scale_value(UI['PADDING_TITLE_BOTTOM'], s)
+            )
+        )
 
         # Player grid: 8 slots in 4x2 layout
-        self.grid_frame = tk.Frame(self.main_container, bg=COLOR_BG_DARK)
+        self.grid_frame = tk.Frame(self.main_container, bg=COLOR['BG_DARK'])
         self.grid_frame.pack()
 
         self.slot_cards = []
         for i in range(8):
-            row = i // 2  # 0-3
-            col = i % 2   # 0-1
-
-            c_w = int(420 * s)
-            c_h = int(90 * s)
-            pad_x = int(20 * s)
-            pad_y = int(12 * s)
+            row = i // 2
+            col = i % 2
 
             # Card frame with border highlight
             card = tk.Frame(
                 self.grid_frame,
-                bg=COLOR_BG_CARD,
-                width=c_w,
-                height=c_h,
-                highlightbackground=COLOR_BG_CARD,
-                highlightthickness=int(2*s)
+                bg=COLOR['BG_CARD'],
+                width=scale_value(UI['CARD_WIDTH'], s),
+                height=scale_value(UI['CARD_HEIGHT'], s),
+                highlightbackground=COLOR['BG_CARD'],
+                highlightthickness=scale_value(UI['CARD_BORDER'], s)
             )
             card.pack_propagate(False)
-            card.grid(row=row, column=col, padx=pad_x, pady=pad_y)
+            card.grid(
+                row=row,
+                column=col,
+                padx=scale_value(UI['CARD_PADDING_X'], s),
+                pady=scale_value(UI['CARD_PADDING_Y'], s)
+            )
 
             # Player number label (top-left corner)
             lbl_num = tk.Label(
                 card,
                 text=f"P{i+1}",
-                font=("Segoe UI", int(12*s), "bold"),
-                bg=COLOR_BG_CARD,
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_CARD_SIZE'], s), "bold"),
+                bg=COLOR['BG_CARD'],
                 fg="#444444"
             )
-            lbl_num.place(x=int(15*s), y=int(10*s))
+            lbl_num.place(
+                x=scale_value(UI['CARD_PLAYER_NUM_X'], s),
+                y=scale_value(UI['CARD_PLAYER_NUM_Y'], s)
+            )
 
             # Status/name label (center)
             lbl_status = tk.Label(
                 card,
                 text="PRESS Ⓐ CONNECT",
-                font=("Segoe UI", int(12*s), "bold"),
-                bg=COLOR_BG_CARD,
-                fg=COLOR_TEXT_DIM
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_CARD_SIZE'], s), "bold"),
+                bg=COLOR['BG_CARD'],
+                fg=COLOR['TEXT_DIM']
             )
             lbl_status.place(relx=0.5, rely=0.5, anchor="center")
 
@@ -398,64 +572,61 @@ class RyujinxLauncherApp:
             lbl_disc = tk.Label(
                 card,
                 text="Ⓑ DISCONNECT",
-                font=("Segoe UI", int(10*s), "bold"),
-                bg=COLOR_BG_CARD,
-                fg=COLOR_NEON_RED
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_CARD_SIZE'], s), "bold"),
+                bg=COLOR['BG_CARD'],
+                fg=COLOR['NEON_RED']
             )
 
             self.slot_cards.append((card, lbl_num, lbl_status, lbl_disc))
 
         # Footer: Button hints
-        self.footer_frame = tk.Frame(root, bg="#111111", height=int(80*s))
+        self.footer_frame = tk.Frame(
+            self.root,
+            bg=COLOR['FOOTER_BG'],
+            height=scale_value(UI['FOOTER_HEIGHT'], s)
+        )
         self.footer_frame.pack(side="bottom", fill="x")
         self.footer_frame.pack_propagate(False)
 
         launch_target = "GAME" if len(sys.argv) > 1 else "RYUJINX"
-        separator_text = "|"
-        launch_text = f"☰ LAUNCH {launch_target}"
-        quit_text = f"⧉ QUIT"
-
-        gap_offset = int(15 * s)
 
         self.separator_text = tk.Label(
             self.footer_frame,
-            text=separator_text,
-            font=("Segoe UI", int(14*s), "bold"),
-            bg="#111111",
-            fg=COLOR_TEXT_WHITE
+            text="|",
+            font=(UI['FONT_FAMILY'], scale_font(UI['FONT_FOOTER_SIZE'], s), "bold"),
+            bg=COLOR['FOOTER_BG'],
+            fg=COLOR['TEXT_WHITE']
         )
         self.launch_text = tk.Label(
             self.footer_frame,
-            text=launch_text,
-            font=("Segoe UI", int(14*s), "bold"),
-            bg="#111111",
-            fg=COLOR_TEXT_WHITE
+            text=f"☰ LAUNCH {launch_target}",
+            font=(UI['FONT_FAMILY'], scale_font(UI['FONT_FOOTER_SIZE'], s), "bold"),
+            bg=COLOR['FOOTER_BG'],
+            fg=COLOR['TEXT_WHITE']
         )
         self.quit_text = tk.Label(
             self.footer_frame,
-            text=quit_text,
-            font=("Segoe UI", int(14*s), "bold"),
-            bg="#111111",
-            fg=COLOR_TEXT_WHITE
+            text="⧉ QUIT",
+            font=(UI['FONT_FAMILY'], scale_font(UI['FONT_FOOTER_SIZE'], s), "bold"),
+            bg=COLOR['FOOTER_BG'],
+            fg=COLOR['TEXT_WHITE']
         )
 
+        gap = scale_value(UI['FOOTER_GAP'], s)
         self.separator_text.place(relx=0.5, rely=0.5, anchor="center")
-        self.launch_text.place(relx=0.5, rely=0.5, anchor="e", x=-gap_offset)
-        self.quit_text.place(relx=0.5, rely=0.5, anchor="w", x=gap_offset)
+        self.launch_text.place(relx=0.5, rely=0.5, anchor="e", x=-gap)
+        self.quit_text.place(relx=0.5, rely=0.5, anchor="w", x=gap)
 
         # Toast notification label (hidden by default)
         self.lbl_toast = tk.Label(
             self.main_container,
             text="",
-            font=("Segoe UI", int(12*s), "bold"),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_NEON_RED
+            font=(UI['FONT_FAMILY'], scale_font(UI['FONT_TOAST_SIZE'], s), "bold"),
+            bg=COLOR['BG_DARK'],
+            fg=COLOR['NEON_RED']
         )
-        self.lbl_toast.place(relx=0.5, rely=0.9, anchor="center")
+        self.lbl_toast.place(relx=0.5, rely=UI['TOAST_POSITION_Y'], anchor="center")
         self.lbl_toast.place_forget()
-
-        # Start main event loop
-        self.update_loop()
 
     # ========================================================================
     # CONFIGURATION MANAGEMENT
@@ -521,7 +692,7 @@ class RyujinxLauncherApp:
             self.root.after_cancel(self.toast_job)
 
         self.lbl_toast.config(text=message)
-        self.lbl_toast.place(relx=0.5, rely=0.9, anchor="center")
+        self.lbl_toast.place(relx=0.5, rely=UI['TOAST_POSITION_Y'], anchor="center")
         self.toast_job = self.root.after(2000, lambda: self.lbl_toast.place_forget())
 
     # ========================================================================
@@ -817,7 +988,7 @@ class RyujinxLauncherApp:
                 # ============================================================
                 hid_path, display_name = self.assignments[i]
 
-                # --- NEW: Get the sticky pastel color ---
+                # --- Get the sticky pastel color ---
                 active_color = self.get_assigned_color(hid_path)
                 # ----------------------------------------
 
@@ -826,26 +997,26 @@ class RyujinxLauncherApp:
 
                 # Update Card Border (Use active_color)
                 card.config(
-                    bg=COLOR_BG_CARD,
+                    bg=COLOR['BG_CARD'],
                     highlightbackground=active_color,  # Changed from NEON_BLUE
                     highlightcolor=active_color        # Changed from NEON_BLUE
                 )
 
                 # Update Player Number Color (Use active_color)
-                lbl_num.config(bg=COLOR_BG_CARD, fg=active_color)
+                lbl_num.config(bg=COLOR['BG_CARD'], fg=active_color)
 
                 # Update Name Text Color (Use active_color)
                 lbl_status.place(relx=0.5, rely=0.25, anchor="center")
                 lbl_status.config(
                     text=clean_name,
-                    bg=COLOR_BG_CARD,
+                    bg=COLOR['BG_CARD'],
                     fg=active_color,                   # Changed from NEON_BLUE
-                    font=("Segoe UI", int(12*s), "bold")
+                    font=(UI['FONT_FAMILY'], scale_font(UI['FONT_CARD_SIZE'], s), "bold")
                 )
 
                 # Show disconnect hint (Keep Red for "Danger/Action")
                 lbl_disc.place(relx=0.5, rely=0.75, anchor="center")
-                lbl_disc.config(bg=COLOR_BG_CARD, fg=COLOR_NEON_RED)
+                lbl_disc.config(bg=COLOR['BG_CARD'], fg=COLOR['NEON_RED'])
 
             else:
                 # ============================================================
@@ -853,17 +1024,17 @@ class RyujinxLauncherApp:
                 # ============================================================
                 # (This part remains exactly the same as your original code)
                 card.config(
-                    bg=COLOR_BG_CARD,
-                    highlightbackground=COLOR_BG_CARD,
-                    highlightcolor=COLOR_BG_CARD
+                    bg=COLOR['BG_CARD'],
+                    highlightbackground=COLOR['BG_CARD'],
+                    highlightcolor=COLOR['BG_CARD']
                 )
-                lbl_num.config(bg=COLOR_BG_CARD, fg="#444444")
+                lbl_num.config(bg=COLOR['BG_CARD'], fg="#444444")
                 lbl_status.place(relx=0.5, rely=0.5, anchor="center")
                 lbl_status.config(
                     text="PRESS Ⓐ CONNECT",
-                    bg=COLOR_BG_CARD,
-                    fg=COLOR_TEXT_DIM,
-                    font=("Segoe UI", int(12*s), "bold")
+                    bg=COLOR['BG_CARD'],
+                    fg=COLOR['TEXT_DIM'],
+                    font=(UI['FONT_FAMILY'], scale_font(UI['FONT_CARD_SIZE'], s), "bold")
                 )
                 lbl_disc.place_forget()
 
@@ -896,15 +1067,19 @@ class RyujinxLauncherApp:
         self.alert_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         # Dialog box
-        box_w = int(600 * s)
-        box_h = int(320 * s)
         box = tk.Frame(
             self.alert_frame,
-            bg="#1E1E1E",
-            bd=2,
+            bg=COLOR['ALERT_BOX_BG'],
+            bd=scale_value(UI['ALERT_BOX_BORDER'], s),
             relief="solid"
         )
-        box.place(relx=0.5, rely=0.5, anchor="center", width=box_w, height=box_h)
+        box.place(
+            relx=0.5,
+            rely=0.5,
+            anchor="center",
+            width=scale_value(UI['ALERT_BOX_WIDTH'], s),
+            height=scale_value(UI['ALERT_BOX_HEIGHT'], s)
+        )
 
         if mode == "LAUNCH":
             # ================================================================
@@ -915,37 +1090,37 @@ class RyujinxLauncherApp:
             tk.Label(
                 box,
                 text="⚠️ NO CONTROLLERS",
-                font=("Segoe UI", int(26*s), "bold"),
-                bg="#1E1E1E",
-                fg="#FFCC00"
-            ).pack(pady=(int(40*s), int(10*s)))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TITLE_SIZE'], s), "bold"),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['ALERT_YELLOW']
+            ).pack(pady=(scale_value(UI['ALERT_TITLE_PADDING_TOP'], s), scale_value(UI['ALERT_TITLE_PADDING_BOTTOM'], s)))
 
             tk.Label(
                 box,
                 text="Ryujinx will launch with default inputs.",
-                font=("Segoe UI", int(14*s)),
-                bg="#1E1E1E",
-                fg="#BBBBBB"
-            ).pack(pady=int(5*s))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TEXT_SIZE'], s)),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['ALERT_TEXT_DIM']
+            ).pack(pady=scale_value(UI['ALERT_TEXT_PADDING'], s))
 
-            btn_frame = tk.Frame(box, bg="#1E1E1E")
-            btn_frame.pack(pady=int(40*s))
+            btn_frame = tk.Frame(box, bg=COLOR['ALERT_BOX_BG'])
+            btn_frame.pack(pady=scale_value(UI['ALERT_BTN_PADDING_TOP'], s))
 
             tk.Label(
                 btn_frame,
                 text=f"Ⓐ LAUNCH {launch_target}",
-                font=("Segoe UI", int(12*s), "bold"),
-                bg="#1E1E1E",
-                fg=COLOR_NEON_BLUE
-            ).pack(side="left", padx=int(20*s))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['NEON_BLUE']
+            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
 
             tk.Label(
                 btn_frame,
                 text="Ⓑ BACK",
-                font=("Segoe UI", int(12*s), "bold"),
-                bg="#1E1E1E",
-                fg=COLOR_NEON_RED
-            ).pack(side="left", padx=int(20*s))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['NEON_RED']
+            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
 
         elif mode == "EXIT":
             # ================================================================
@@ -954,37 +1129,37 @@ class RyujinxLauncherApp:
             tk.Label(
                 box,
                 text="EXIT LAUNCHER?",
-                font=("Segoe UI", int(26*s), "bold"),
-                bg="#1E1E1E",
-                fg=COLOR_TEXT_WHITE
-            ).pack(pady=(int(40*s), int(10*s)))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TITLE_SIZE'], s), "bold"),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['TEXT_WHITE']
+            ).pack(pady=(scale_value(UI['ALERT_TITLE_PADDING_TOP'], s), scale_value(UI['ALERT_TITLE_PADDING_BOTTOM'], s)))
 
             tk.Label(
                 box,
                 text="Are you sure you want to quit?",
-                font=("Segoe UI", int(14*s)),
-                bg="#1E1E1E",
-                fg="#BBBBBB"
-            ).pack(pady=int(5*s))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TEXT_SIZE'], s)),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['ALERT_TEXT_DIM']
+            ).pack(pady=scale_value(UI['ALERT_TEXT_PADDING'], s))
 
-            btn_frame = tk.Frame(box, bg="#1E1E1E")
-            btn_frame.pack(pady=int(40*s))
+            btn_frame = tk.Frame(box, bg=COLOR['ALERT_BOX_BG'])
+            btn_frame.pack(pady=scale_value(UI['ALERT_BTN_PADDING_TOP'], s))
 
             tk.Label(
                 btn_frame,
                 text="Ⓐ YES",
-                font=("Segoe UI", int(12*s), "bold"),
-                bg="#1E1E1E",
-                fg=COLOR_NEON_BLUE
-            ).pack(side="left", padx=int(20*s))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['NEON_BLUE']
+            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
 
             tk.Label(
                 btn_frame,
                 text="Ⓑ NO",
-                font=("Segoe UI", int(12*s), "bold"),
-                bg="#1E1E1E",
-                fg=COLOR_NEON_RED
-            ).pack(side="left", padx=int(20*s))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['NEON_RED']
+            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
 
         elif mode == "KILL_CONFIRM":
             # ================================================================
@@ -993,51 +1168,50 @@ class RyujinxLauncherApp:
             tk.Label(
                 box,
                 text="KILL GAME?",
-                font=("Segoe UI", int(26*s), "bold"),
-                bg="#1E1E1E",
-                fg=COLOR_TEXT_WHITE
-            ).pack(pady=(int(40*s), int(10*s)))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TITLE_SIZE'], s), "bold"),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['TEXT_WHITE']
+            ).pack(pady=(scale_value(UI['ALERT_TITLE_PADDING_TOP'], s), scale_value(UI['ALERT_TITLE_PADDING_BOTTOM'], s)))
 
             tk.Label(
                 box,
                 text="How would you like to proceed?",
-                font=("Segoe UI", int(14*s)),
-                bg="#1E1E1E",
-                fg="#BBBBBB"
-            ).pack(pady=int(5*s))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TEXT_SIZE'], s)),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['ALERT_TEXT_DIM']
+            ).pack(pady=scale_value(UI['ALERT_TEXT_PADDING'], s))
 
-            btn_frame = tk.Frame(box, bg="#1E1E1E")
-            btn_frame.pack(pady=int(30*s))
+            btn_frame = tk.Frame(box, bg=COLOR['ALERT_BOX_BG'])
+            btn_frame.pack(pady=scale_value(UI['ALERT_BTN_PADDING_TOP'], s))
 
             # Option 1: Return to launcher for controller reconfiguration
             tk.Label(
                 btn_frame,
                 text="Ⓐ LAUNCHER",
-                font=("Segoe UI", int(12*s), "bold"),
-                bg="#1E1E1E",
-                fg=COLOR_NEON_BLUE
-            ).pack(side="left", padx=int(15*s))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['NEON_BLUE']
+            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
 
             # Option 2: Exit to desktop
             tk.Label(
                 btn_frame,
                 text="Ⓨ DESKTOP",
-                font=("Segoe UI", int(12*s), "bold"),
-                bg="#1E1E1E",
-                fg="#FFCC00"
-            ).pack(side="left", padx=int(15*s))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['ALERT_YELLOW']
+            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
 
             # Option 3: Cancel and resume game
             tk.Label(
                 btn_frame,
                 text="Ⓑ CANCEL",
-                font=("Segoe UI", int(12*s), "bold"),
-                bg="#1E1E1E",
-                fg=COLOR_NEON_RED
-            ).pack(side="left", padx=int(15*s))
+                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
+                bg=COLOR['ALERT_BOX_BG'],
+                fg=COLOR['NEON_RED']
+            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
 
     def close_alert(self):
-        """Dismiss the current alert dialog."""
         self.alert_mode = None
         if self.alert_frame:
             self.alert_frame.destroy()
