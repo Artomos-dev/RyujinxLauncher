@@ -731,7 +731,7 @@ class RyujinxLauncherApp:
         Sets flag to prevent automatic exit when process terminates.
         """
         self.returning_to_launcher = True
-        time.sleep(0.1)  # Brief delay for flag to propagate
+        time.sleep(0.005)  # 5ms delay for flag to propagate
 
         if self.ryujinx_process:
             self.ryujinx_process.kill()
@@ -749,7 +749,7 @@ class RyujinxLauncherApp:
     # ========================================================================
     def update_loop(self):
         """
-        Main event processing loop (runs every 50ms).
+        Main event processing loop (runs every 16ms).
 
         Handles:
         - Ryujinx process monitoring
@@ -793,7 +793,7 @@ class RyujinxLauncherApp:
             if kill_combo:
                 self.root.deiconify()  # Bring launcher to foreground
                 self.show_alert("KILL_CONFIRM")
-                self.root.after(50, self.update_loop)
+                self.root.after(16, self.update_loop)
                 return
 
         # ====================================================================
@@ -901,8 +901,8 @@ class RyujinxLauncherApp:
             elif event.type == sdl2.SDL_QUIT:
                 self.root.destroy()
 
-        # Schedule next update in 50ms
-        self.root.after(50, self.update_loop)
+        # Schedule next update in 16ms
+        self.root.after(16, self.update_loop)
 
     # ========================================================================
     # CONTROLLER ASSIGNMENT LOGIC
