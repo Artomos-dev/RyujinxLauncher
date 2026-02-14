@@ -416,6 +416,7 @@ class RyujinxLauncherApp:
         self.ryujinx_process = None         # Ryujinx subprocess handle
         self.toast_job = None               # Toast notification timer
         self.returning_to_launcher = False  # Flag for kill→restart flow
+        self.ryujinx_version = self.get_ryujinx_version() # Get Ryujinx Version
 
         # Load existing controller mapping template from Config.json
         self.master_template = self.load_config_data(CONFIG_FILE)
@@ -626,6 +627,51 @@ class RyujinxLauncherApp:
     # ========================================================================
     # CONFIGURATION MANAGEMENT
     # ========================================================================
+    def get_ryujinx_version(self):
+        """
+        Determines Ryujinx version by reading the executable metadata directly.
+        Returns: Ryujinx version string (1.1.1403/1.3.1/1.3.2/1.3.3)
+        """
+        # Default to new version if detection fails
+        detected_version = "1.3.3"
+        exe_path = os.path.join(ryujinx_dir, TARGET_EXE)
+
+        if not os.path.exists(exe_path):
+            return detected_version
+
+        try:
+            if sys.platform == "win32":
+                # --- WINDOWS METHOD (PowerShell) ---
+                # We use PowerShell to read the 'FileVersion' property from the EXE header
+                # This works even if the app has never been opened.
+                cmd = [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    f"(Get-Item '{exe_path}').VersionInfo.FileVersion"
+                ]
+                # Run hidden, capture output
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+                output = subprocess.check_output(
+                    cmd,
+                    startupinfo=startupinfo,
+                    text=True
+                ).strip().rsplit('.', 1)[0]
+            else:
+                # --- LINUX/MAC METHOD ---
+                # Try running with --version (fastest check)
+                cmd = [exe_path, "--version"]
+                output = subprocess.check_output(cmd, text=True).strip().rsplit('.', 1)[0]
+
+            return output
+
+        except Exception:
+            # If detection crashes (permissions, etc), simply assume NEW version
+            pass
+
+        return detected_version
     def load_config_data(self, file_path):
         """
         Load existing controller mapping template from Ryujinx Config.json.
@@ -671,8 +717,13 @@ class RyujinxLauncherApp:
         if len(raw_hex) < 32:
             return raw_hex  # Invalid GUID, return as-is
 
-        bus_id = raw_hex[:2]
-        part1 = f"000000{bus_id}"
+        if self.ryujinx_version == "1.1.1403":
+            # v1.1.1403: Standard endian swap of first 4 bytes (e.g. 8d930003)
+            part1 = raw_hex[6:8] + raw_hex[4:6] + raw_hex[2:4] + raw_hex[:2]
+        else:
+            # v1.3.1/v1.3.2/v1.3.3: Bus ID masked (e.g. 00000003)
+            bus_id = raw_hex[:2]
+            part1 = f"000000{bus_id}"
         part2 = raw_hex[10:12] + raw_hex[8:10]   # Endian swap
         part3 = raw_hex[14:16] + raw_hex[12:14]  # Endian swap
         part4_a = raw_hex[16:20]
@@ -1309,7 +1360,17 @@ class RyujinxLauncherApp:
                 # Create controller config entry
                 entry = copy.deepcopy(self.master_template)
                 entry["id"] = matched_hw["ryu_id"]      # Correct GUID with index
-                entry["name"] = matched_hw["name"]
+                if self.ryujinx_version == "1.1.1403":
+                    # Ryujinx (v1.1.1403)
+                    entry.pop("led", None)
+                    entry.pop("name", None)
+                elif self.ryujinx_version == "1.3.1":
+                    # Ryujinx (v1.3.1)
+                    entry.pop("name", None)
+                else:
+                    # Ryujinx (v1.3.2/v1.3.3)
+                    entry["name"] = matched_hw["name"]
+
                 entry["player_index"] = f"Player{i+1}"
                 entry["backend"] = "GamepadSDL2"
                 entry["controller_type"] = "ProController"
