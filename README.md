@@ -1,6 +1,6 @@
 # <img src="assets/RyujinxLauncherPNG.png" alt="Ryujinx Launcher Logo" width="24"> Ryujinx Launcher
 
-***Version 1.0.0***
+***Version 1.0.1***
 
 # <img src="https://repository-images.githubusercontent.com/1152064244/0948360e-bad3-48bb-be30-f2db1aeb4d71" alt="Ryujinx Launcher">
 ---
@@ -24,7 +24,7 @@ With features like hot-plug detection and a controller-based "Kill Combo" for ex
 
 **Visual & Intuitive:** Features a high-contrast side-rail UI with persistent pastel color-coding so you always know which controller belongs to which player at a glance.
 
-**Tested on Windows 11 with Ryujinx v1.3.3**
+**Tested on Windows 11 with Ryujinx v1.3.3/v1.3.2/v1.3.1/v1.1.1403**
 
 ---
 
@@ -93,11 +93,11 @@ Example `RyujinxPath.config` content: `D:\emulators\Ryujinx`
 
 ## 🚧 Testing & Compatibility Status
 
-* **Windows:** ✅ **Verified.** Tested on Windows 11 with Ryujinx v1.3.3.
+* **Windows:** ✅ **Verified.** Tested on Windows 11 with Ryujinx v1.3.3/v1.3.2/v1.3.1/v1.1.1403.
 
 | Platform | Status | Tested On |
 |----------|--------|-----------|
-| Windows 11 | ✅ Verified | Ryujinx 1.3.3 |
+| Windows 11 | ✅ Verified | Ryujinx v1.3.3/v1.3.2/v1.3.1/v1.1.1403 |
 | Windows 10 | ✅ Should Work | Not tested |
 | macOS 13+ | ⚠️ Untested | Need testers! |
 | Linux (Ubuntu/SteamOS) | ⚠️ Untested | Need testers! |
