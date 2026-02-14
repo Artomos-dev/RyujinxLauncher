@@ -419,11 +419,6 @@ class RyujinxLauncherApp:
 
         # Load existing controller mapping template from Config.json
         self.master_template = self.load_config_data(CONFIG_FILE)
-        if self.master_template == FALLBACK_TEMPLATE:
-            # Try backup config if available
-            backup_path = os.path.join(os.path.dirname(CONFIG_FILE), "Config_Main.json")
-            if os.path.exists(backup_path):
-                self.master_template = self.load_config_data(backup_path)
 
         # Build UI
         self.build_ui()
@@ -649,8 +644,15 @@ class RyujinxLauncherApp:
                             entry.get("controller_type") == "ProController"):
                             template = copy.deepcopy(entry)
                             break
-            except:
-                pass  # Corrupted config, use fallback
+            except Exception as e:
+                # Corrupted config, use fallback
+                messagebox.showerror(
+                    "Configuration Error",
+                    "Could not read Ryujinx Config file.\n\n"
+                    "Please open Ryujinx manually once to generate valid configuration files.\n"
+                    "Then try launching this tool again."
+                )
+                sys.exit(1)  # Stop the launcher immediately
         return template
 
     def ryujinx_guid_fix(self, raw_hex):
