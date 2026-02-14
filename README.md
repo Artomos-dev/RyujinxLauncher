@@ -1,6 +1,6 @@
 # <img src="assets/RyujinxLauncherPNG.png" alt="Ryujinx Launcher Logo" width="24"> Ryujinx Launcher
 
-***Version 1.0.0***
+***Version 1.0.1***
 
 # <img src="https://repository-images.githubusercontent.com/1152064244/0948360e-bad3-48bb-be30-f2db1aeb4d71" alt="Ryujinx Launcher">
 ---
@@ -24,7 +24,7 @@ With features like hot-plug detection and a controller-based "Kill Combo" for ex
 
 **Visual & Intuitive:** Features a high-contrast side-rail UI with persistent pastel color-coding so you always know which controller belongs to which player at a glance.
 
-**Tested on Windows 11 with Ryujinx v1.3.3**
+**Tested on Windows 11 with Ryujinx v1.1.1403/v1.3.1/v1.3.2/v1.3.3/Canary-v1.3.205**
 
 ---
 
@@ -93,14 +93,22 @@ Example `RyujinxPath.config` content: `D:\emulators\Ryujinx`
 
 ## 🚧 Testing & Compatibility Status
 
-* **Windows:** ✅ **Verified.** Tested on Windows 11 with Ryujinx v1.3.3.
+- **Windows:** ✅ **Verified.** Verified on Windows 11 across multiple stable and canary versions.
+- **SDL Version:** ⚠️ **Strictly SDL2.** (See compatibility note below).
 
-| Platform | Status | Tested On |
-|----------|--------|-----------|
-| Windows 11 | ✅ Verified | Ryujinx 1.3.3 |
-| Windows 10 | ✅ Should Work | Not tested |
-| macOS 13+ | ⚠️ Untested | Need testers! |
-| Linux (Ubuntu/SteamOS) | ⚠️ Untested | Need testers! |
+
+> **🛑 Important: Canary Build Compatibility Warning**: 
+>* Ryujinx Canary builds starting from **v1.3.206** have migrated to **SDL3**. 
+>* This launcher currently **only supports SDL2**.
+>* ✅ **Supported:** Stable **v1.1.1403**, **v1.3.x**, Canary builds up to **v1.3.205**.
+>* ❌ **Unsupported:** Canary builds **v1.3.206** and newer (SDL3).
+
+| Platform | Status | Tested Versions |
+| :--- | :--- | :--- |
+| **Windows 11** | ✅ **Verified** | **Old Stable:** v1.1.1403 <Br>**Stable:** v1.3.3 / v1.3.2 / v1.3.1 <br>**Canary:** Up to v1.3.205 |
+| **Windows 10** | ✅ Should Work | *Not explicitly tested, but architecture is identical.* |
+| **macOS 13+** | ⚠️ Untested | *Need testers!* |
+| **Linux** (Ubuntu/SteamOS) | ⚠️ Untested | *Need testers!* |
 
 ---
 ## 🤝 Integration Guide
