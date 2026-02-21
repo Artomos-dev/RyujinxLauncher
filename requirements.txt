@@ -4,5 +4,6 @@ pefile==2024.8.26
 pyinstaller==6.18.0
 pyinstaller-hooks-contrib==2026.0
 PySDL2==0.9.17
+PySDL3==0.9.10b0
 pywin32-ctypes==0.2.3
 setuptools==80.10.2
