@@ -48,9 +48,15 @@ jobs:
         pip install -r requirements.txt
 
     # Linux specific: Install SDL2 dev headers
-    - name: Install SDL2 (Linux Only)
+    - name: Install SDL2 and SDL3 (Linux Only)
       if: runner.os == 'Linux'
-      run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libsdl2-dev cmake build-essential
+        git clone https://github.com/libsdl-org/SDL.git --branch release-3.2.14 --depth 1
+        cd SDL && cmake -B build -DSDL_SHARED=ON -DSDL_STATIC=OFF
+        cmake --build build --parallel
+        sudo cmake --install build
 
     # Build the application
     - name: Build with PyInstaller

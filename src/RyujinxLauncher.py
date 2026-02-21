@@ -29,7 +29,6 @@ import subprocess
 import tkinter as tk
 from tkinter import messagebox
 import ctypes
-import xml.etree.ElementTree as ET
 import copy
 import re
 import time
@@ -166,7 +165,6 @@ if os.path.exists(path_config_file):
 # ============================================================================
 # Determine correct file paths and executable names based on OS
 if sys.platform == "win32":
-    DEFAULT_LIB = "SDL2.dll"
     TARGET_EXE = "Ryujinx.exe"
 
     # Config priority: portable > local > AppData
@@ -181,12 +179,10 @@ if sys.platform == "win32":
         CONFIG_FILE = appdata_config
 
 elif sys.platform == "darwin":  # macOS
-    DEFAULT_LIB = "libSDL2.dylib"
     TARGET_EXE = "Ryujinx"
     CONFIG_FILE = os.path.expanduser("~/.config/Ryujinx/Config.json")
 
 else:  # Linux
-    DEFAULT_LIB = "libSDL2-2.0.so.0"
     TARGET_EXE = "Ryujinx"
     CONFIG_FILE = os.path.expanduser("~/.config/Ryujinx/Config.json")
 
@@ -195,7 +191,7 @@ else:  # Linux
 # ============================================================================
 """
 Determines Ryujinx version by reading the executable metadata directly.
-Returns: Ryujinx version string (1.1.1403/1.3.1/1.3.2/1.3.3)
+Returns: Ryujinx version string (1.1.1403/1.3.1/1.3.2/1.3.3/or newer)
 """
 # Default to new version
 ryujinx_version = "1.3.3"
@@ -250,62 +246,35 @@ if ryujinx_version == "1.1.1403":
 
 ryujinx_env = os.environ.copy()
 
-# Point PySDL2 to the Ryujinx directory for SDL2.dll/dylib/so
-os.environ["PYSDL2_DLL_PATH"] = ryujinx_dir
+# ============================================================================
+# SECTION 8: IMPORT SDL LIBRARY
+# ============================================================================
+
+if tuple(map(int, re.findall(r'\d+', ryujinx_version))) <= tuple(map(int, re.findall(r'\d+', "1.3.205"))):
+    print("🔵 Using SDL2 backend")
+    print(f"🔍 Looking for SDL2 in {ryujinx_dir} ...")
+    os.environ["PYSDL2_DLL_PATH"] = ryujinx_dir
+    from ControllerManagerSDL2 import SDLManager
+    backend_string="GamepadSDL2"
+else:
+    print("🟢 Using SDL3 backend")
+    print(f"🔍 Looking for SDL3 in {ryujinx_dir} ...")
+    os.environ["SDL_BINARY_PATH"] = ryujinx_dir
+    os.environ["SDL_DOWNLOAD_BINARIES"] = "0" # Disable SDL Lib Download, "1" by default.
+    os.environ["SDL_DISABLE_METADATA"] = "1" # Disable metadata method, "0" by default.
+    os.environ["SDL_CHECK_BINARY_VERSION"] = "0" # Disable binary version checking, "1" by default.
+    os.environ["SDL_IGNORE_MISSING_FUNCTIONS"] = "1" # Disable missing function warnings, "1" by default.
+    os.environ["SDL_FIND_BINARIES"] = "1" # Search for binaries in the system libraries, "1" by default.
+    from ControllerManagerSDL3 import SDLManager
+    backend_string="GamepadSDL3"
 
 # ============================================================================
-# SECTION 8: SDL2 DRIVER DETECTION
-# ============================================================================
-# Read Ryujinx's XML config to find the correct SDL2 library name
-xml_config_path = os.path.join(ryujinx_dir, "Ryujinx.SDL2.Common.dll.config")
-lib_name = None
-
-if os.path.exists(xml_config_path):
-    try:
-        tree = ET.parse(xml_config_path)
-        root = tree.getroot()
-        current_os_xml = {
-            "win32": "windows",
-            "darwin": "osx",
-            "linux": "linux"
-        }.get(sys.platform, "linux")
-
-        for child in root.findall('dllmap'):
-            if child.get('dll') == "SDL2" and child.get('os') == current_os_xml:
-                lib_name = child.get('target')
-                break
-    except:
-        pass  # XML parsing failed, use default
-
-if not lib_name:
-    lib_name = DEFAULT_LIB
-
-# ============================================================================
-# SECTION 9: IMPORT SDL2 LIBRARY
-# ============================================================================
-try:
-    import sdl2
-    import sdl2.ext
-except ImportError:
-    messagebox.showerror(
-        "Error",
-        "PySDL2 not installed.\nRun: pip install pysdl2"
-    )
-    sys.exit(1)
-except Exception as e:
-    messagebox.showerror(
-        "DLL Error",
-        f"Could not find {lib_name} in:\n{ryujinx_dir}\n\nError: {e}"
-    )
-    sys.exit(1)
-
-# ============================================================================
-# SECTION 10: DEFAULT CONTROLLER MAPPING TEMPLATE
+# SECTION 9: DEFAULT CONTROLLER MAPPING TEMPLATE
 # ============================================================================
 # Fallback template if no existing config found (matches Nintendo Pro Controller layout)
 FALLBACK_TEMPLATE = {
     "version": 1,
-    "backend": "GamepadSDL2",
+    "backend": backend_string,
     "id": "",
     "name": "",
     "controller_type": "ProController",
@@ -371,7 +340,7 @@ FALLBACK_TEMPLATE = {
 }
 
 # ============================================================================
-# SECTION 11: DYNAMIC SCALING UTILITY
+# SECTION 10: DYNAMIC SCALING UTILITY
 # ============================================================================
 def calculate_scale(screen_width, screen_height):
     """
@@ -405,7 +374,7 @@ def scale_font(size, scale):
     return max(10, int(size * scale))
 
 # ============================================================================
-# SECTION 12: MAIN APPLICATION CLASS
+# SECTION 11: MAIN APPLICATION CLASS
 # ============================================================================
 class RyujinxLauncherApp:
     """
@@ -458,11 +427,8 @@ class RyujinxLauncherApp:
         # Bind the configure event to detect resolution/scale changes
         self.root.bind("<Configure>", self.on_window_configure)
 
-        # Initialize SDL2 controller subsystem
-        try:
-            sdl2.SDL_Init(sdl2.SDL_INIT_JOYSTICK | sdl2.SDL_INIT_GAMECONTROLLER)
-        except Exception as e:
-            messagebox.showerror("Driver Error", f"Failed to load SDL2 driver.\n{e}")
+        # Initialize SDL2/SDL3 controller subsystem
+        SDLManager.SDL_Init()
 
         # State management
         self.controllers = {}               # {instance_id: SDL_GameController}
@@ -700,7 +666,7 @@ class RyujinxLauncherApp:
                     data = json.load(f)
                 if "input_config" in data and isinstance(data["input_config"], list):
                     for entry in data["input_config"]:
-                        if (entry.get("backend") == "GamepadSDL2" and
+                        if (entry.get("backend") in ("GamepadSDL2", "GamepadSDL3") and
                             entry.get("controller_type") == "ProController"):
                             template = copy.deepcopy(entry)
                             break
@@ -717,13 +683,13 @@ class RyujinxLauncherApp:
 
     def ryujinx_guid_fix(self, raw_hex):
         """
-        Convert SDL2 GUID format to Ryujinx's expected format.
+        Convert SDL2/SDL3 GUID format to Ryujinx's expected format.
 
         Ryujinx uses a specific GUID structure:
         000000XX-YYZZ-AABB-CCCC-DDDDDDDDDDDD
 
         Args:
-            raw_hex (str): Raw 32-character hex GUID from SDL2
+            raw_hex (str): Raw 32-character hex GUID from SDL2/SDL3
 
         Returns:
             str: Reformatted GUID for Ryujinx
@@ -852,9 +818,9 @@ class RyujinxLauncherApp:
             # Global approach allows recovery if Player 1's controller fails
             kill_combo = False
             for ctrl in self.controllers.values():
-                if (sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_BACK) and
-                    sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_LEFTSHOULDER) and
-                    sdl2.SDL_GameControllerGetButton(ctrl, sdl2.SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)):
+                if (SDLManager.SDL_GameControllerGetButton(ctrl, SDLManager.SDL_CONTROLLER_BUTTON_BACK) and
+                    SDLManager.SDL_GameControllerGetButton(ctrl, SDLManager.SDL_CONTROLLER_BUTTON_LEFT_SHOULDER) and
+                    SDLManager.SDL_GameControllerGetButton(ctrl, SDLManager.SDL_CONTROLLER_BUTTON_RIGHT_SHOULDER)):
                     kill_combo = True
                     break
 
@@ -867,28 +833,27 @@ class RyujinxLauncherApp:
         # ====================================================================
         # CONTROLLER HARDWARE DETECTION (HOT-PLUG SUPPORT)
         # ====================================================================
-        num_joysticks = sdl2.SDL_NumJoysticks()
         self.hardware_map.clear()
 
         # Scan all connected controllers and build current hardware map
-        for i in range(num_joysticks):
-            if not sdl2.SDL_IsGameController(i):
+        for joystick_id in SDLManager.SDL_GetJoystickIDs():
+            if not SDLManager.SDL_IsGameController(joystick_id):
                 continue  # Skip non-gamepad devices (e.g., flight sticks)
 
-            ctrl = sdl2.SDL_GameControllerOpen(i)
+            ctrl = SDLManager.SDL_GameControllerOpen(joystick_id)
             if ctrl:
-                joy = sdl2.SDL_GameControllerGetJoystick(ctrl)
-                instance_id = sdl2.SDL_JoystickInstanceID(joy)
+                joy = SDLManager.SDL_GameControllerGetJoystick(ctrl)
+                instance_id = SDLManager.SDL_JoystickInstanceID(joy)
 
                 # Cache controller handle for button polling
                 if instance_id not in self.controllers:
                     self.controllers[instance_id] = ctrl
 
-                raw_name = sdl2.SDL_GameControllerName(ctrl).decode()
+                raw_name = SDLManager.SDL_GameControllerName(ctrl).decode()
 
                 # Get HID path (hardware-specific, persists across reconnects)
                 try:
-                    path_bytes = sdl2.SDL_GameControllerPath(ctrl)
+                    path_bytes = SDLManager.SDL_GameControllerPath(ctrl)
                     hid_path = path_bytes.decode() if path_bytes else f"UNK_{instance_id}"
                 except:
                     hid_path = f"UNK_{instance_id}"  # Fallback for unsupported platforms
@@ -923,30 +888,31 @@ class RyujinxLauncherApp:
         # ====================================================================
         # GAMEPAD BUTTON EVENT PROCESSING
         # ====================================================================
-        event = sdl2.SDL_Event()
-        while sdl2.SDL_PollEvent(ctypes.byref(event)) != 0:
-            if event.type == sdl2.SDL_CONTROLLERBUTTONDOWN:
+        event = SDLManager.SDL_Event()
+        while SDLManager.SDL_PollEvent(ctypes.byref(event)) != 0:
+            if event.type == SDLManager.SDL_CONTROLLERBUTTONDOWN:
+                button, which = SDLManager.get_button_info(event)
                 # ============================================================
                 # ALERT MODE HANDLERS
                 # ============================================================
                 if self.alert_mode:
                     if self.alert_mode == "KILL_CONFIRM":
                         # Three-option kill menu
-                        if event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_A:
+                        if button == SDLManager.SDL_CONTROLLER_BUTTON_A:
                             self.kill_and_restart()  # Return to launcher
-                        elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_Y:
+                        elif button == SDLManager.SDL_CONTROLLER_BUTTON_Y:
                             self.kill_and_quit()  # Exit to desktop
-                        elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_B:
+                        elif button == SDLManager.SDL_CONTROLLER_BUTTON_B:
                             self.close_alert()
                             self.root.withdraw()  # Cancel, resume game
                     else:
                         # Standard two-option alerts (launch/exit confirmations)
-                        if event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_A:
+                        if button == SDLManager.SDL_CONTROLLER_BUTTON_A:
                             if self.alert_mode == "LAUNCH":
                                 self.force_launch()
                             elif self.alert_mode == "EXIT":
                                 self.root.destroy()
-                        elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_B:
+                        elif button == SDLManager.SDL_CONTROLLER_BUTTON_B:
                             self.close_alert()
 
                 # ============================================================
@@ -957,16 +923,16 @@ class RyujinxLauncherApp:
                     if self.ryujinx_process:
                         continue
 
-                    if event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_A:
-                        self.assign_player(event.cbutton.which)  # Assign controller
-                    elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_B:
-                        self.remove_player(event.cbutton.which)  # Remove assignment
-                    elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_START:
-                        self.check_launch()  # Launch Ryujinx
-                    elif event.cbutton.button == sdl2.SDL_CONTROLLER_BUTTON_BACK:
+                    if button == SDLManager.SDL_CONTROLLER_BUTTON_A:
+                        self.assign_player(which)  # Assign controller
+                    elif button == SDLManager.SDL_CONTROLLER_BUTTON_B:
+                        self.remove_player(which)  # Remove assignment
+                    elif button == SDLManager.SDL_CONTROLLER_BUTTON_START:
+                        self.check_launch()        # Launch Ryujinx
+                    elif button == SDLManager.SDL_CONTROLLER_BUTTON_BACK:
                         self.show_exit_confirmation()  # Exit launcher
 
-            elif event.type == sdl2.SDL_QUIT:
+            elif event.type == SDLManager.SDL_QUIT:
                 self.root.destroy()
 
         # Schedule next update in 16ms
@@ -980,7 +946,7 @@ class RyujinxLauncherApp:
         Assign a controller to the next available player slot.
 
         Args:
-            instance_id (int): SDL2 instance ID of the controller
+            instance_id (int): SDL2/SDL3 instance ID of the controller
         """
         if instance_id not in self.hardware_map:
             return  # Controller disconnected before assignment
@@ -1004,7 +970,7 @@ class RyujinxLauncherApp:
         Remove a controller's player assignment.
 
         Args:
-            instance_id (int): SDL2 instance ID of the controller to remove
+            instance_id (int): SDL2/SDL3 instance ID of the controller to remove
         """
         if instance_id not in self.hardware_map:
             return
@@ -1292,46 +1258,45 @@ class RyujinxLauncherApp:
         """
         Generate Ryujinx controller configuration from current assignments.
 
-        Critical: This performs a FRESH SDL2 scan to get correct GUID indices
+        Critical: This performs a FRESH SDL scan to get correct GUID indices
         in the OS enumeration order that Ryujinx will see.
         """
         # ====================================================================
-        # STEP 1: RESET SDL2 SUBSYSTEM
+        # STEP 1: RESET SDL SUBSYSTEM
         # ====================================================================
         # Close all existing controller handles
         for c in self.controllers.values():
-            sdl2.SDL_GameControllerClose(c)
+            SDLManager.SDL_GameControllerClose(c)
         self.controllers.clear()
 
-        # Reinitialize SDL2 for fresh enumeration
-        sdl2.SDL_QuitSubSystem(sdl2.SDL_INIT_JOYSTICK | sdl2.SDL_INIT_GAMECONTROLLER)
-        sdl2.SDL_Init(sdl2.SDL_INIT_JOYSTICK | sdl2.SDL_INIT_GAMECONTROLLER)
+        # Reinitialize SDL2/SDL3 for fresh enumeration
+        SDLManager.SDL_QuitSubSystem(SDLManager.SDL_INIT_JOYSTICK | SDLManager.SDL_INIT_GAMECONTROLLER)
+        SDLManager.SDL_Init()
 
         # ====================================================================
         # STEP 2: BUILD HARDWARE LIST WITH CORRECT GUID INDICES
         # ====================================================================
         final_hw_list = []
-        num = sdl2.SDL_NumJoysticks()
         guid_counters = {}  # Track index per unique GUID
 
-        for i in range(num):
-            if not sdl2.SDL_IsGameController(i):
+        for joystick_id in SDLManager.SDL_GetJoystickIDs():
+            if not SDLManager.SDL_IsGameController(joystick_id):
                 continue
 
-            ctrl = sdl2.SDL_GameControllerOpen(i)
+            ctrl = SDLManager.SDL_GameControllerOpen(joystick_id)
             if ctrl:
-                joy = sdl2.SDL_GameControllerGetJoystick(ctrl)
+                joy = SDLManager.SDL_GameControllerGetJoystick(ctrl)
 
                 # Extract GUID
-                guid_obj = sdl2.SDL_JoystickGetGUID(joy)
+                guid_obj = SDLManager.SDL_JoystickGetGUID(joy)
                 psz_guid = (ctypes.c_char * 33)()
-                sdl2.SDL_JoystickGetGUIDString(guid_obj, psz_guid, 33)
+                SDLManager.SDL_JoystickGetGUIDString(guid_obj, psz_guid, 33)
                 raw_guid_str = psz_guid.value.decode()
                 base_guid = self.ryujinx_guid_fix(raw_guid_str)
 
                 # Extract HID path (for matching with assignments)
                 try:
-                    p = sdl2.SDL_GameControllerPath(ctrl)
+                    p = SDLManager.SDL_GameControllerPath(ctrl)
                     path = p.decode() if p else ""
                 except:
                     path = ""
@@ -1344,10 +1309,10 @@ class RyujinxLauncherApp:
                 final_hw_list.append({
                     "path": path,
                     "ryu_id": final_id,
-                    "name": sdl2.SDL_GameControllerName(ctrl).decode()
+                    "name": SDLManager.SDL_GameControllerName(ctrl).decode()
                 })
 
-                sdl2.SDL_GameControllerClose(ctrl)
+                SDLManager.SDL_GameControllerClose(ctrl)
 
         # ====================================================================
         # STEP 3: MATCH ASSIGNMENTS TO HARDWARE BY HID PATH
@@ -1382,11 +1347,11 @@ class RyujinxLauncherApp:
                     # Ryujinx (v1.3.1)
                     entry.pop("name", None)
                 else:
-                    # Ryujinx (v1.3.2/v1.3.3)
+                    # Ryujinx (v1.3.2/v1.3.3/All New version)
                     entry["name"] = matched_hw["name"]
 
                 entry["player_index"] = f"Player{i+1}"
-                entry["backend"] = "GamepadSDL2"
+                entry["backend"] = backend_string
                 entry["controller_type"] = "ProController"
                 new_input.append(entry)
 
