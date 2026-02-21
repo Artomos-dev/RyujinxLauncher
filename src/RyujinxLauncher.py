@@ -190,50 +190,152 @@ else:  # Linux
 # SECTION 6: RYUJINX VERSION DETECTION
 # ============================================================================
 """
-Determines Ryujinx version by reading the executable metadata directly.
+Determines Ryujinx version.
 Returns: Ryujinx version string (1.1.1403/1.3.1/1.3.2/1.3.3/or newer)
+1. Windows: Reads PE metadata natively via ctypes.
+2. Mac: Reads native Info.plist (CFBundleLongVersionString).
+3. Linux: [ENV VAR OVERRIDE] → Log filename parsing → Conflict detection.
 """
+
 # Default to new version
-ryujinx_version = "1.3.3"
+ryujinx_version = "1.1.1403"
 exe_path = os.path.join(ryujinx_dir, TARGET_EXE)
 
 if os.path.exists(exe_path):
     try:
         if sys.platform == "win32":
-            # --- WINDOWS METHOD (PowerShell) ---
-            # We use PowerShell to read the 'FileVersion' property from the EXE header
-            # This works even if the app has never been opened.
-            cmd = [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                f"(Get-Item '{exe_path}').VersionInfo.FileVersion"
-            ]
-            # Run hidden, capture output
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            # --- WINDOWS METHOD (ctypes) ---
+            ver_info_size = ctypes.windll.version.GetFileVersionInfoSizeW(exe_path, None)
+            if ver_info_size:
+                ver_info = ctypes.create_string_buffer(ver_info_size)
+                ctypes.windll.version.GetFileVersionInfoW(exe_path, 0, ver_info_size, ver_info)
 
-            output = subprocess.check_output(
-                cmd,
-                startupinfo=startupinfo,
-                text=True
-            ).strip().rsplit('.', 1)[0]
+                lp_buffer = ctypes.c_void_p()
+                lp_len = ctypes.c_uint()
+                ctypes.windll.version.VerQueryValueW(
+                    ver_info, "\\", ctypes.byref(lp_buffer), ctypes.byref(lp_len)
+                )
+
+                class VS_FIXEDFILEINFO(ctypes.Structure):
+                    _fields_ = [
+                        ("dwSignature",        ctypes.c_uint32),
+                        ("dwStrucVersion",     ctypes.c_uint32),
+                        ("dwFileVersionMS",    ctypes.c_uint32),
+                        ("dwFileVersionLS",    ctypes.c_uint32),
+                        ("dwProductVersionMS", ctypes.c_uint32),
+                        ("dwProductVersionLS", ctypes.c_uint32),
+                        ("dwFileFlagsMask",    ctypes.c_uint32),
+                        ("dwFileFlags",        ctypes.c_uint32),
+                        ("dwFileOS",           ctypes.c_uint32),
+                        ("dwFileType",         ctypes.c_uint32),
+                        ("dwFileSubtype",      ctypes.c_uint32),
+                        ("dwFileDateMS",       ctypes.c_uint32),
+                        ("dwFileDateLS",       ctypes.c_uint32),
+                    ]
+
+                ffi = VS_FIXEDFILEINFO.from_address(lp_buffer.value)
+                v1 = (ffi.dwFileVersionMS >> 16) & 0xFFFF
+                v2 = (ffi.dwFileVersionMS >>  0) & 0xFFFF
+                v3 = (ffi.dwFileVersionLS >> 16) & 0xFFFF
+                ryujinx_version = f"{v1}.{v2}.{v3}"
+
+        elif sys.platform == "darwin":
+            # --- MAC METHOD (Native Plist) ---
+            import plistlib
+            plist_path = os.path.abspath(os.path.join(exe_path, "..", "..", "Info.plist"))
+            if os.path.exists(plist_path):
+                with open(plist_path, 'rb') as f:
+                    raw = plistlib.load(f).get("CFBundleLongVersionString", ryujinx_version)
+                    ryujinx_version = raw.split("-")[0].strip('"')  # "1.3.3-e2143d4" → "1.3.3"
+            else:
+                messagebox.showerror(
+                    "One-Time Setup Required",
+                    "Could not detect your Ryujinx version automatically.\n\n"
+                    "This is a one-time setup step required when installing or upgrading Ryujinx.\n\n"
+                    "Please launch Ryujinx manually once to generate the required log files, then relaunch this launcher.\n\n"
+                    "If the issue persists, you can manually override the version using an environment variable:\n\n"
+                    "echo 'export RL_RYUJINX_VERSION=1.3.3' >> ~/.zshrc && source ~/.zshrc\n\n"
+                    "(Replace 1.3.3 with your actual version). Run this in Terminal."
+                )
+                sys.exit(1)
+
         else:
-            # --- LINUX/MAC METHOD ---
-            # Try running with --version (fastest check)
-            cmd = [exe_path, "--version"]
-            output = subprocess.check_output(
-                cmd,
-                text=True
-            ).strip().rsplit('.', 1)[0]
-        ryujinx_version = output
+            # --- LINUX METHOD ---
+            # 1. HIGHEST PRIORITY: Environment variable override
+            env_version = os.environ.get("RL_RYUJINX_VERSION")
+            if env_version:
+                ryujinx_version = env_version.strip()
+
+            else:
+                # 2. Log filename parsing + conflict detection
+                xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+
+                linux_log_paths = [
+                    os.path.join(ryujinx_dir, "portable", "Logs"),
+                    os.path.join(ryujinx_dir, "Logs"),
+                    os.path.join(xdg_config, "Ryujinx", "Logs"),
+                    os.path.expanduser("~/.config/Ryujinx/Logs"),
+                    "/home/deck/.config/Ryujinx/Logs",
+                    os.path.expanduser("~/.var/app/org.ryujinx.Ryujinx/config/Ryujinx/Logs"),
+                    os.path.expanduser("~/.var/app/oio.github.ryubing.Ryujinx/config/Ryujinx/Logs")
+                ]
+
+                found_versions = set()
+
+                for logs_dir in linux_log_paths:
+                    if os.path.exists(logs_dir):
+                        log_files = sorted([
+                            f for f in os.listdir(logs_dir)
+                            if f.startswith("Ryujinx_") and f.endswith(".log")
+                        ])
+
+                        if log_files:
+                            latest_log = log_files[-1]  # Most recent log
+                            parts = latest_log.split('_')
+
+                            detected_v = None
+                            if len(parts) > 2 and parts[1].lower() == "canary":
+                                detected_v = parts[2]  # Ryujinx_canary_1.3.3_<date>.log
+                            elif len(parts) > 1:
+                                detected_v = parts[1]  # Ryujinx_1.3.3_<date>.log
+
+                            if detected_v:
+                                found_versions.add(detected_v)
+
+                if len(found_versions) == 1:
+                    ryujinx_version = found_versions.pop()
+
+                elif len(found_versions) > 1:
+                    versions_str = ", ".join(found_versions)
+                    messagebox.showerror(
+                        "Multiple Versions Detected",
+                        f"Found conflicting Ryujinx versions ({versions_str}) from multiple install locations.\n\n"
+                        "One-Time Setup Required\n\n"
+                        "To resolve this, please explicitly set your version using an environment variable before launching:\n\n"
+                        "echo 'export RL_RYUJINX_VERSION=1.3.3' >> ~/.bashrc && source ~/.bashrc\n\n"
+                        "(Replace 1.3.3 with your actual version). Run this in your terminal"
+                    )
+                    sys.exit(1)
+
+                else:
+                    messagebox.showerror(
+                        "Ryujinx Version Missing",
+                        "Could not detect your Ryujinx version automatically.\n\n"
+                        "This is a one-time setup step required when installing or upgrading Ryujinx.\n\n"
+                        "1. Please try launching Ryujinx manually once without the launcher to generate log files.\n\n"
+                        "2. If that does not fix the issue, you can manually override it using an environment variable:\n\n"
+                        "echo 'export RL_RYUJINX_VERSION=1.3.3' >> ~/.bashrc && source ~/.bashrc\n\n"
+                        "(Replace 1.3.3 with your actual version). Run this in your terminal"
+                    )
+                    sys.exit(1)
+
     except Exception:
-        # If detection crashes (permissions, etc), simply assume NEW version
-        pass
+        pass  # Fall back to default "1.1.1403"
+
 else:
     messagebox.showerror(
-    "Ryujinx Missing",
-    f"Could not find {TARGET_EXE} in:\n{ryujinx_dir}"
+        "Ryujinx Missing",
+        f"Could not find {TARGET_EXE} in:\n{ryujinx_dir}"
     )
     sys.exit(1)
 
