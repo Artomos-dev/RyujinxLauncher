@@ -161,9 +161,6 @@ if os.path.exists(path_config_file):
         # If reading fails, silently fall back to default (base_path)
         pass
 
-# Point PySDL2 to the Ryujinx directory for SDL2.dll/dylib/so
-os.environ["PYSDL2_DLL_PATH"] = ryujinx_dir
-
 # ============================================================================
 # SECTION 5: PLATFORM-SPECIFIC CONFIGURATION
 # ============================================================================
@@ -194,7 +191,70 @@ else:  # Linux
     CONFIG_FILE = os.path.expanduser("~/.config/Ryujinx/Config.json")
 
 # ============================================================================
-# SECTION 6: SDL2 DRIVER DETECTION
+# SECTION 6: RYUJINX VERSION DETECTION
+# ============================================================================
+"""
+Determines Ryujinx version by reading the executable metadata directly.
+Returns: Ryujinx version string (1.1.1403/1.3.1/1.3.2/1.3.3)
+"""
+# Default to new version
+ryujinx_version = "1.3.3"
+exe_path = os.path.join(ryujinx_dir, TARGET_EXE)
+
+if os.path.exists(exe_path):
+    try:
+        if sys.platform == "win32":
+            # --- WINDOWS METHOD (PowerShell) ---
+            # We use PowerShell to read the 'FileVersion' property from the EXE header
+            # This works even if the app has never been opened.
+            cmd = [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f"(Get-Item '{exe_path}').VersionInfo.FileVersion"
+            ]
+            # Run hidden, capture output
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+            output = subprocess.check_output(
+                cmd,
+                startupinfo=startupinfo,
+                text=True
+            ).strip().rsplit('.', 1)[0]
+        else:
+            # --- LINUX/MAC METHOD ---
+            # Try running with --version (fastest check)
+            cmd = [exe_path, "--version"]
+            output = subprocess.check_output(
+                cmd,
+                text=True
+            ).strip().rsplit('.', 1)[0]
+        ryujinx_version = output
+    except Exception:
+        # If detection crashes (permissions, etc), simply assume NEW version
+        pass
+else:
+    messagebox.showerror(
+    "Ryujinx Missing",
+    f"Could not find {TARGET_EXE} in:\n{ryujinx_dir}"
+    )
+    sys.exit(1)
+
+# ============================================================================
+# SECTION 7: CREATE ENVIRONMENT FOR RYUJINXLAUNCHER AND RYUJINX
+# ============================================================================
+
+if ryujinx_version == "1.1.1403":
+    os.environ["SDL_JOYSTICK_RAWINPUT"] = "0"
+
+ryujinx_env = os.environ.copy()
+
+# Point PySDL2 to the Ryujinx directory for SDL2.dll/dylib/so
+os.environ["PYSDL2_DLL_PATH"] = ryujinx_dir
+
+# ============================================================================
+# SECTION 8: SDL2 DRIVER DETECTION
 # ============================================================================
 # Read Ryujinx's XML config to find the correct SDL2 library name
 xml_config_path = os.path.join(ryujinx_dir, "Ryujinx.SDL2.Common.dll.config")
@@ -221,7 +281,7 @@ if not lib_name:
     lib_name = DEFAULT_LIB
 
 # ============================================================================
-# SECTION 7: IMPORT SDL2 LIBRARY
+# SECTION 9: IMPORT SDL2 LIBRARY
 # ============================================================================
 try:
     import sdl2
@@ -240,7 +300,7 @@ except Exception as e:
     sys.exit(1)
 
 # ============================================================================
-# SECTION 8: DEFAULT CONTROLLER MAPPING TEMPLATE
+# SECTION 10: DEFAULT CONTROLLER MAPPING TEMPLATE
 # ============================================================================
 # Fallback template if no existing config found (matches Nintendo Pro Controller layout)
 FALLBACK_TEMPLATE = {
@@ -311,7 +371,7 @@ FALLBACK_TEMPLATE = {
 }
 
 # ============================================================================
-# SECTION 9: DYNAMIC SCALING UTILITY
+# SECTION 11: DYNAMIC SCALING UTILITY
 # ============================================================================
 def calculate_scale(screen_width, screen_height):
     """
@@ -345,7 +405,7 @@ def scale_font(size, scale):
     return max(10, int(size * scale))
 
 # ============================================================================
-# SECTION 10: MAIN APPLICATION CLASS
+# SECTION 12: MAIN APPLICATION CLASS
 # ============================================================================
 class RyujinxLauncherApp:
     """
@@ -416,7 +476,6 @@ class RyujinxLauncherApp:
         self.ryujinx_process = None         # Ryujinx subprocess handle
         self.toast_job = None               # Toast notification timer
         self.returning_to_launcher = False  # Flag for kill→restart flow
-        self.ryujinx_version = self.get_ryujinx_version() # Get Ryujinx Version
 
         # Load existing controller mapping template from Config.json
         self.master_template = self.load_config_data(CONFIG_FILE)
@@ -627,51 +686,6 @@ class RyujinxLauncherApp:
     # ========================================================================
     # CONFIGURATION MANAGEMENT
     # ========================================================================
-    def get_ryujinx_version(self):
-        """
-        Determines Ryujinx version by reading the executable metadata directly.
-        Returns: Ryujinx version string (1.1.1403/1.3.1/1.3.2/1.3.3)
-        """
-        # Default to new version if detection fails
-        detected_version = "1.3.3"
-        exe_path = os.path.join(ryujinx_dir, TARGET_EXE)
-
-        if not os.path.exists(exe_path):
-            return detected_version
-
-        try:
-            if sys.platform == "win32":
-                # --- WINDOWS METHOD (PowerShell) ---
-                # We use PowerShell to read the 'FileVersion' property from the EXE header
-                # This works even if the app has never been opened.
-                cmd = [
-                    "powershell",
-                    "-NoProfile",
-                    "-Command",
-                    f"(Get-Item '{exe_path}').VersionInfo.FileVersion"
-                ]
-                # Run hidden, capture output
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-
-                output = subprocess.check_output(
-                    cmd,
-                    startupinfo=startupinfo,
-                    text=True
-                ).strip().rsplit('.', 1)[0]
-            else:
-                # --- LINUX/MAC METHOD ---
-                # Try running with --version (fastest check)
-                cmd = [exe_path, "--version"]
-                output = subprocess.check_output(cmd, text=True).strip().rsplit('.', 1)[0]
-
-            return output
-
-        except Exception:
-            # If detection crashes (permissions, etc), simply assume NEW version
-            pass
-
-        return detected_version
     def load_config_data(self, file_path):
         """
         Load existing controller mapping template from Ryujinx Config.json.
@@ -717,7 +731,7 @@ class RyujinxLauncherApp:
         if len(raw_hex) < 32:
             return raw_hex  # Invalid GUID, return as-is
 
-        if self.ryujinx_version == "1.1.1403":
+        if ryujinx_version == "1.1.1403":
             # v1.1.1403: Standard endian swap of first 4 bytes (e.g. 8d930003)
             part1 = raw_hex[6:8] + raw_hex[4:6] + raw_hex[2:4] + raw_hex[:2]
         else:
@@ -1360,11 +1374,11 @@ class RyujinxLauncherApp:
                 # Create controller config entry
                 entry = copy.deepcopy(self.master_template)
                 entry["id"] = matched_hw["ryu_id"]      # Correct GUID with index
-                if self.ryujinx_version == "1.1.1403":
+                if ryujinx_version == "1.1.1403":
                     # Ryujinx (v1.1.1403)
                     entry.pop("led", None)
                     entry.pop("name", None)
-                elif self.ryujinx_version == "1.3.1":
+                elif ryujinx_version == "1.3.1":
                     # Ryujinx (v1.3.1)
                     entry.pop("name", None)
                 else:
@@ -1404,7 +1418,7 @@ class RyujinxLauncherApp:
             try:
                 # Launch Ryujinx with all arguments passed to launcher
                 cmd_args = [exe_path] + sys.argv[1:]
-                self.ryujinx_process = subprocess.Popen(cmd_args)
+                self.ryujinx_process = subprocess.Popen(cmd_args, env=ryujinx_env)
             except Exception as e:
                 messagebox.showerror(
                     "Launch Error",
