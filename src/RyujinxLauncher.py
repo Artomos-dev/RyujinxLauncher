@@ -491,7 +491,12 @@ class RyujinxLauncherApp:
         self.root.title("Ryujinx Launcher")
         self.root.configure(bg=COLOR['BG_DARK'])
         self.root.attributes('-fullscreen', True)
-        self.root.tk.call('tk', 'scaling', 1.3333)
+        if sys.platform == "win32":
+            self.root.tk.call('tk', 'scaling', 1.3333)
+        else:
+            # Let the system handle DPI scaling on Linux/macOS
+            os.environ.setdefault('GDK_SCALE', '1')
+            os.environ.setdefault('GDK_DPI_SCALE', '1')
 
         # Update 1: Define the specific filenames from your assets folder
         ico_path = resource_path(os.path.join("assets", "RyujinxLauncherIcon.ico"))
@@ -578,7 +583,12 @@ class RyujinxLauncherApp:
         """
         Actually rebuild the UI with the new scale factor.
         """
-        self.root.tk.call('tk', 'scaling', 1.3333)
+        if sys.platform == "win32":
+            self.root.tk.call('tk', 'scaling', 1.3333)
+        else:
+            # Let the system handle DPI scaling on Linux/macOS
+            os.environ.setdefault('GDK_SCALE', '1')
+            os.environ.setdefault('GDK_DPI_SCALE', '1')
         self.screen_width = self.root.winfo_screenwidth()
         self.screen_height = self.root.winfo_screenheight()
 
