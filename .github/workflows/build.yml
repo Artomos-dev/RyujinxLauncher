@@ -17,19 +17,19 @@ jobs:
         include:
           - os: windows-latest
             artifact_name: RyujinxLauncher.exe
-            upload_name: RyujinxLauncher-Windows
+            upload_name: RyujinxLauncher-Windows.zip
             sep: ';'
             icon: 'assets\RyujinxLauncherIcon.ico'
           
           - os: ubuntu-latest
             artifact_name: RyujinxLauncher
-            upload_name: RyujinxLauncher-Linux
+            upload_name: RyujinxLauncher-Linux.zip
             sep: ':'
             icon: 'assets/RyujinxLauncherPNG.png'
             
           - os: macos-latest
             artifact_name: RyujinxLauncher
-            upload_name: RyujinxLauncher-MacOS
+            upload_name: RyujinxLauncher-MacOS.zip
             sep: ':'
             icon: 'assets/RyujinxLauncherIcon.icns'
 
