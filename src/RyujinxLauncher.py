@@ -986,6 +986,10 @@ class RyujinxLauncherApp:
             # Show toast notification for first disconnected controller
             if dropped_names:
                 self.show_toast(f"⚠️ {dropped_names[0][1]} Disconnected!", self.hid_colors[dropped_names[0][0]])
+                for path, name in dropped_names:
+                    color = self.hid_colors.pop(path, None)
+                    if color:
+                        self.color_pool.append(color)
 
         # ====================================================================
         # GAMEPAD BUTTON EVENT PROCESSING
