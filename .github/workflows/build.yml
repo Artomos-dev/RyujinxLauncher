@@ -52,7 +52,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libsdl2-dev cmake build-essential
+        sudo apt-get install -y libsdl2-dev cmake build-essential python3-tk
         git clone https://github.com/libsdl-org/SDL.git --branch release-3.2.14 --depth 1
         cd SDL && cmake -B build -DSDL_SHARED=ON -DSDL_STATIC=OFF
         cmake --build build --parallel
@@ -61,7 +61,7 @@ jobs:
     # Build the application
     - name: Build with PyInstaller
       run: |
-        pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="${{ matrix.icon }}" --add-data "assets${{ matrix.sep }}assets" src/RyujinxLauncher.py
+        pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="${{ matrix.icon }}" --add-data "assets${{ matrix.sep }}assets" --collect-all customtkinter src/RyujinxLauncher.py
 
     # Set Permission (Linux/MacOS)
     # We apply this to the raw binary so GitHub preserves it in the auto-zip

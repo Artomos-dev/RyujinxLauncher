@@ -28,6 +28,7 @@ import json
 import subprocess
 import tkinter as tk
 from tkinter import messagebox
+import customtkinter as ctk
 import ctypes
 import copy
 import re
@@ -38,13 +39,20 @@ import random
 # SECTION 1: HI-DPI DISPLAY SUPPORT
 # ============================================================================
 # Enables proper scaling on high-resolution displays (4K, 1440p)
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(1)  # Windows 8.1+
-except Exception:
+# 1. Stop Windows from double-scaling
+if sys.platform == "win32":
+    ctk.deactivate_automatic_dpi_awareness()
     try:
-        ctypes.windll.user32.SetProcessDPIAware()  # Windows Vista-8
-    except:
-        pass  # Non-Windows or unsupported
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)  # Windows 8.1+
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()  # Windows Vista-8
+        except:
+            pass  # Non-Windows or unsupported
+# 2. Stop Linux from double-scaling
+else:
+    os.environ.setdefault('GDK_SCALE', '1')
+    os.environ.setdefault('GDK_DPI_SCALE', '1')
 
 # ============================================================================
 # SECTION 2: UI DESIGN VARIABLES (720p BASELINE - 1280x720)
@@ -55,13 +63,13 @@ except Exception:
 UI = {
     # === FONTS ===
     'FONT_FAMILY': 'Segoe UI',
-    'FONT_TITLE_SIZE': 30,          # Main title
-    'FONT_CARD_SIZE': 16,           # Player card text
-    'FONT_FOOTER_SIZE': 17,         # Footer buttons
-    'FONT_ALERT_TITLE_SIZE': 26,    # Alert dialog title
-    'FONT_ALERT_TEXT_SIZE': 17,     # Alert dialog text
-    'FONT_ALERT_BTN_SIZE': 16,      # Alert dialog buttons
-    'FONT_TOAST_SIZE': 16,          # Toast notification
+    'FONT_TITLE_SIZE': 39,          # Main title
+    'FONT_CARD_SIZE': 21,           # Player card text
+    'FONT_FOOTER_SIZE': 22,         # Footer buttons
+    'FONT_ALERT_TITLE_SIZE': 33,    # Alert dialog title
+    'FONT_ALERT_TEXT_SIZE': 22,     # Alert dialog text
+    'FONT_ALERT_BTN_SIZE': 21,      # Alert dialog buttons
+    'FONT_TOAST_SIZE': 21,          # Toast notification
 
     # === SPACING ===
     'PADDING_MAIN': 40,             # Main container padding
@@ -74,6 +82,7 @@ UI = {
     'CARD_PADDING_X': 15,           # Horizontal gap between cards
     'CARD_PADDING_Y': 10,           # Vertical gap between cards
     'CARD_BORDER': 2,               # Card border thickness
+    'CARD_CORNER_RADIUS': 12,       # Card corner radius
     'CARD_PLAYER_NUM_X': 12,        # Player number X position
     'CARD_PLAYER_NUM_Y': 8,         # Player number Y position
 
@@ -85,6 +94,7 @@ UI = {
     'ALERT_BOX_WIDTH': 500,         # Alert dialog width
     'ALERT_BOX_HEIGHT': 240,        # Alert dialog height
     'ALERT_BOX_BORDER': 2,          # Alert dialog border
+    'ALERT_BOX_CORNER_RADIUS': 12,  # Alert box corner radius
     'ALERT_TITLE_PADDING_TOP': 30,  # Alert title top padding
     'ALERT_TITLE_PADDING_BOTTOM': 8,# Alert title bottom padding
     'ALERT_TEXT_PADDING': 4,        # Alert text padding
@@ -118,6 +128,10 @@ COLOR_POOL = [
     "#FF00FF", "#DA70D6", "#9370DB", "#FF69B4", "#D8BFD8",  # Magenta, Orchid, MedPurple, HotPink, Thistle
     "#FFFF00", "#FFD700", "#F0E68C", "#FFC200", "#FFFFFF"   # Yellow, Gold, Khaki, Amber, White
 ]
+
+# set dark mode once before any window is created
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("dark-blue")
 
 # ============================================================================
 # SECTION 4: PATH DETECTION & CONFIGURATION
@@ -466,15 +480,6 @@ def calculate_scale(screen_width, screen_height):
         scale = 0.2
 
     return scale
-
-def scale_value(value, scale):
-    """Scale a single value"""
-    return int(value * scale)
-
-def scale_font(size, scale):
-    """Scale font size with minimum of 10pt"""
-    return max(10, int(size * scale))
-
 # ============================================================================
 # SECTION 11: MAIN APPLICATION CLASS
 # ============================================================================
@@ -489,9 +494,8 @@ class RyujinxLauncherApp:
         """Initialize the launcher UI and controller subsystem."""
         self.root = root
         self.root.title("Ryujinx Launcher")
-        self.root.configure(bg=COLOR['BG_DARK'])
+        self.root.configure(fg_color=COLOR['BG_DARK'])
         self.root.attributes('-fullscreen', True)
-        self.root.tk.call('tk', 'scaling', 1.3333)
 
         # Update 1: Define the specific filenames from your assets folder
         ico_path = resource_path(os.path.join("assets", "RyujinxLauncherIcon.ico"))
@@ -525,6 +529,9 @@ class RyujinxLauncherApp:
         self.screen_height = self.root.winfo_screenheight()
         self.scale = calculate_scale(self.screen_width, self.screen_height)
         self.resize_job = None
+
+        ctk.set_window_scaling(self.scale)  # Scales the window size
+        ctk.set_widget_scaling(self.scale)  # Scales the buttons, fonts, and elements inside
 
         # Bind the configure event to detect resolution/scale changes
         self.root.bind("<Configure>", self.on_window_configure)
@@ -578,12 +585,14 @@ class RyujinxLauncherApp:
         """
         Actually rebuild the UI with the new scale factor.
         """
-        self.root.tk.call('tk', 'scaling', 1.3333)
         self.screen_width = self.root.winfo_screenwidth()
         self.screen_height = self.root.winfo_screenheight()
 
         # Recalculate scale
         self.scale = calculate_scale(self.screen_width, self.screen_height)
+
+        ctk.set_window_scaling(self.scale)  # Scales the window size
+        ctk.set_widget_scaling(self.scale)  # Scales the buttons, fonts, and elements inside
 
         # Destroy old UI
         if hasattr(self, 'main_container'):
@@ -613,37 +622,40 @@ class RyujinxLauncherApp:
 
     def build_ui(self):
         """Build the entire UI using scaled values"""
-        s = self.scale
 
         # Main container
-        self.main_container = tk.Frame(self.root, bg=COLOR['BG_DARK'])
+        self.main_container = ctk.CTkFrame(
+            self.root,
+            fg_color=COLOR['BG_DARK'],
+            corner_radius=0
+        )
         self.main_container.pack(
             expand=True,
             fill="both",
-            padx=scale_value(UI['PADDING_MAIN'], s),
-            pady=scale_value(UI['PADDING_MAIN'], s)
+            padx=(UI['PADDING_MAIN']),
+            pady=(UI['PADDING_MAIN'])
         )
 
         # Header: Title
         mode_prefix = "GAME" if len(sys.argv) > 1 else "RYUJINX"
         title_text = f"{mode_prefix} CONTROLLER SETUP"
 
-        self.lbl_title = tk.Label(
+        self.lbl_title = ctk.CTkLabel(
             self.main_container,
             text=title_text,
-            font=(UI['FONT_FAMILY'], scale_font(UI['FONT_TITLE_SIZE'], s), "bold"),
-            bg=COLOR['BG_DARK'],
-            fg=COLOR['TEXT_WHITE']
+            font=(UI['FONT_FAMILY'], UI['FONT_TITLE_SIZE'], "bold"),
+            fg_color="transparent",
+            text_color=COLOR['TEXT_WHITE']
         )
         self.lbl_title.pack(
             pady=(
-                scale_value(UI['PADDING_TITLE_TOP'], s),
-                scale_value(UI['PADDING_TITLE_BOTTOM'], s)
+                (UI['PADDING_TITLE_TOP']),
+                (UI['PADDING_TITLE_BOTTOM'])
             )
         )
 
         # Player grid: 8 slots in 4x2 layout
-        self.grid_frame = tk.Frame(self.main_container, bg=COLOR['BG_DARK'])
+        self.grid_frame = ctk.CTkFrame(self.main_container, fg_color=COLOR['BG_DARK'], corner_radius=0)
         self.grid_frame.pack()
 
         self.slot_cards = []
@@ -652,101 +664,103 @@ class RyujinxLauncherApp:
             col = i % 2
 
             # Card frame with border highlight
-            card = tk.Frame(
+            card = ctk.CTkFrame(
                 self.grid_frame,
-                bg=COLOR['BG_CARD'],
-                width=scale_value(UI['CARD_WIDTH'], s),
-                height=scale_value(UI['CARD_HEIGHT'], s),
-                highlightbackground=COLOR['BG_CARD'],
-                highlightthickness=scale_value(UI['CARD_BORDER'], s)
+                fg_color=COLOR['BG_CARD'],
+                width=UI['CARD_WIDTH'],
+                height=UI['CARD_HEIGHT'],
+                border_color=COLOR['BG_CARD'],
+                border_width=UI['CARD_BORDER'],
+                corner_radius=UI['CARD_CORNER_RADIUS']
             )
-            card.pack_propagate(False)
+            card.grid_propagate(False)
             card.grid(
                 row=row,
                 column=col,
-                padx=scale_value(UI['CARD_PADDING_X'], s),
-                pady=scale_value(UI['CARD_PADDING_Y'], s)
+                padx=(UI['CARD_PADDING_X']),
+                pady=(UI['CARD_PADDING_Y'])
             )
 
             # Player number label (top-left corner)
-            lbl_num = tk.Label(
+            lbl_num = ctk.CTkLabel(
                 card,
                 text=f"P{i+1}",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_CARD_SIZE'], s), "bold"),
-                bg=COLOR['BG_CARD'],
-                fg="#444444"
+                font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color="#444444"
             )
             lbl_num.place(
-                x=scale_value(UI['CARD_PLAYER_NUM_X'], s),
-                y=scale_value(UI['CARD_PLAYER_NUM_Y'], s)
+                x=UI['CARD_PLAYER_NUM_X'],
+                y=UI['CARD_PLAYER_NUM_Y']
             )
 
             # Status/name label (center)
-            lbl_status = tk.Label(
+            lbl_status = ctk.CTkLabel(
                 card,
                 text="PRESS Ⓐ CONNECT",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_CARD_SIZE'], s), "bold"),
-                bg=COLOR['BG_CARD'],
-                fg=COLOR['TEXT_DIM']
+                font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['TEXT_DIM']
             )
             lbl_status.place(relx=0.5, rely=0.5, anchor="center")
 
             # Disconnect hint label (bottom, initially hidden)
-            lbl_disc = tk.Label(
+            lbl_disc = ctk.CTkLabel(
                 card,
                 text="Ⓑ DISCONNECT",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_CARD_SIZE'], s), "bold"),
-                bg=COLOR['BG_CARD'],
-                fg=COLOR['NEON_RED']
+                font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['NEON_RED']
             )
 
             self.slot_cards.append((card, lbl_num, lbl_status, lbl_disc))
 
         # Footer: Button hints
-        self.footer_frame = tk.Frame(
+        self.footer_frame = ctk.CTkFrame(
             self.root,
-            bg=COLOR['FOOTER_BG'],
-            height=scale_value(UI['FOOTER_HEIGHT'], s)
+            fg_color=COLOR['FOOTER_BG'],
+            height=UI['FOOTER_HEIGHT'],
+            corner_radius=0
         )
         self.footer_frame.pack(side="bottom", fill="x")
         self.footer_frame.pack_propagate(False)
 
         launch_target = "GAME" if len(sys.argv) > 1 else "RYUJINX"
 
-        self.separator_text = tk.Label(
+        self.separator_text = ctk.CTkLabel(
             self.footer_frame,
             text="|",
-            font=(UI['FONT_FAMILY'], scale_font(UI['FONT_FOOTER_SIZE'], s), "bold"),
-            bg=COLOR['FOOTER_BG'],
-            fg=COLOR['TEXT_WHITE']
+            font=(UI['FONT_FAMILY'], UI['FONT_FOOTER_SIZE'], "bold"),
+            fg_color="transparent",
+            text_color=COLOR['TEXT_WHITE']
         )
-        self.launch_text = tk.Label(
+        self.launch_text = ctk.CTkLabel(
             self.footer_frame,
             text=f"☰ LAUNCH {launch_target}",
-            font=(UI['FONT_FAMILY'], scale_font(UI['FONT_FOOTER_SIZE'], s), "bold"),
-            bg=COLOR['FOOTER_BG'],
-            fg=COLOR['TEXT_WHITE']
+            font=(UI['FONT_FAMILY'], UI['FONT_FOOTER_SIZE'], "bold"),
+            fg_color="transparent",
+            text_color=COLOR['TEXT_WHITE']
         )
-        self.quit_text = tk.Label(
+        self.quit_text = ctk.CTkLabel(
             self.footer_frame,
             text="⧉ QUIT",
-            font=(UI['FONT_FAMILY'], scale_font(UI['FONT_FOOTER_SIZE'], s), "bold"),
-            bg=COLOR['FOOTER_BG'],
-            fg=COLOR['TEXT_WHITE']
+            font=(UI['FONT_FAMILY'], UI['FONT_FOOTER_SIZE'], "bold"),
+            fg_color="transparent",
+            text_color=COLOR['TEXT_WHITE']
         )
 
-        gap = scale_value(UI['FOOTER_GAP'], s)
+        gap = UI['FOOTER_GAP']
         self.separator_text.place(relx=0.5, rely=0.5, anchor="center")
         self.launch_text.place(relx=0.5, rely=0.5, anchor="e", x=-gap)
         self.quit_text.place(relx=0.5, rely=0.5, anchor="w", x=gap)
 
         # Toast notification label (hidden by default)
-        self.lbl_toast = tk.Label(
+        self.lbl_toast = ctk.CTkLabel(
             self.main_container,
             text="",
-            font=(UI['FONT_FAMILY'], scale_font(UI['FONT_TOAST_SIZE'], s), "bold"),
-            bg=COLOR['BG_DARK'],
-            fg=COLOR['NEON_RED']
+            font=(UI['FONT_FAMILY'], UI['FONT_TOAST_SIZE'], "bold"),
+            fg_color="transparent",
+            text_color=COLOR['NEON_RED']
         )
         self.lbl_toast.place(relx=0.5, rely=UI['TOAST_POSITION_Y'], anchor="center")
         self.lbl_toast.place_forget()
@@ -826,8 +840,8 @@ class RyujinxLauncherApp:
         if self.toast_job:
             self.root.after_cancel(self.toast_job)
 
-        self.lbl_toast.config(fg=color)
-        self.lbl_toast.config(text=message)
+        self.lbl_toast.configure(text_color=color)
+        self.lbl_toast.configure(text=message)
         self.lbl_toast.place(relx=0.5, rely=UI['TOAST_POSITION_Y'], anchor="center")
         self.toast_job = self.root.after(2000, lambda: self.lbl_toast.place_forget())
 
@@ -1117,7 +1131,6 @@ class RyujinxLauncherApp:
 
     def refresh_grid(self):
         """Update all player slot cards to reflect current assignments."""
-        s = self.scale
 
         for i in range(8):
             card, lbl_num, lbl_status, lbl_disc = self.slot_cards[i]
@@ -1136,45 +1149,43 @@ class RyujinxLauncherApp:
                 clean_name = re.sub(r'\s*\(\d+\)$', '', display_name)
 
                 # Update Card Border (Use active_color)
-                card.config(
-                    bg=COLOR['BG_CARD'],
-                    highlightbackground=active_color,  # Changed from NEON_BLUE
-                    highlightcolor=active_color        # Changed from NEON_BLUE
+                card.configure(
+                    fg_color=COLOR['BG_CARD'],
+                    border_color=active_color
                 )
 
                 # Update Player Number Color (Use active_color)
-                lbl_num.config(bg=COLOR['BG_CARD'], fg=active_color)
+                lbl_num.configure(fg_color="transparent", text_color=active_color)
 
                 # Update Name Text Color (Use active_color)
                 lbl_status.place(relx=0.5, rely=0.25, anchor="center")
-                lbl_status.config(
+                lbl_status.configure(
                     text=clean_name,
-                    bg=COLOR['BG_CARD'],
-                    fg=active_color,                   # Changed from NEON_BLUE
-                    font=(UI['FONT_FAMILY'], scale_font(UI['FONT_CARD_SIZE'], s), "bold")
+                    fg_color="transparent",
+                    text_color=active_color,
+                    font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold")
                 )
 
                 # Show disconnect hint (Keep Red for "Danger/Action")
                 lbl_disc.place(relx=0.5, rely=0.75, anchor="center")
-                lbl_disc.config(bg=COLOR['BG_CARD'], fg=COLOR['NEON_RED'])
+                lbl_disc.configure(fg_color="transparent", text_color=COLOR['NEON_RED'])
 
             else:
                 # ============================================================
                 # INACTIVE SLOT (No controller assigned)
                 # ============================================================
                 # (This part remains exactly the same as your original code)
-                card.config(
-                    bg=COLOR['BG_CARD'],
-                    highlightbackground=COLOR['BG_CARD'],
-                    highlightcolor=COLOR['BG_CARD']
+                card.configure(
+                    fg_color=COLOR['BG_CARD'],
+                    border_color=COLOR['BG_CARD']
                 )
-                lbl_num.config(bg=COLOR['BG_CARD'], fg="#444444")
+                lbl_num.configure(fg_color="transparent", text_color="#444444")
                 lbl_status.place(relx=0.5, rely=0.5, anchor="center")
-                lbl_status.config(
+                lbl_status.configure(
                     text="PRESS Ⓐ CONNECT",
-                    bg=COLOR['BG_CARD'],
-                    fg=COLOR['TEXT_DIM'],
-                    font=(UI['FONT_FAMILY'], scale_font(UI['FONT_CARD_SIZE'], s), "bold")
+                    fg_color="transparent",
+                    text_color=COLOR['TEXT_DIM'],
+                    font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold")
                 )
                 lbl_disc.place_forget()
 
@@ -1200,25 +1211,26 @@ class RyujinxLauncherApp:
             mode (str): Alert type - "LAUNCH", "EXIT", or "KILL_CONFIRM"
         """
         self.alert_mode = mode
-        s = self.scale
 
         # Fullscreen overlay
-        self.alert_frame = tk.Frame(self.root, bg="#000000")
+        self.alert_frame = ctk.CTkFrame(self.root, fg_color="#000000", corner_radius=0)
         self.alert_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         # Dialog box
-        box = tk.Frame(
+        box = ctk.CTkFrame(
             self.alert_frame,
-            bg=COLOR['ALERT_BOX_BG'],
-            bd=scale_value(UI['ALERT_BOX_BORDER'], s),
-            relief="solid"
+            width=UI['ALERT_BOX_WIDTH'],
+            height=UI['ALERT_BOX_HEIGHT'],
+            fg_color=COLOR['ALERT_BOX_BG'],
+            border_width=UI['ALERT_BOX_BORDER'],
+            border_color="#444444",
+            corner_radius=UI['ALERT_BOX_CORNER_RADIUS']
         )
+        box.pack_propagate(False)
         box.place(
             relx=0.5,
             rely=0.5,
             anchor="center",
-            width=scale_value(UI['ALERT_BOX_WIDTH'], s),
-            height=scale_value(UI['ALERT_BOX_HEIGHT'], s)
         )
 
         if mode == "LAUNCH":
@@ -1227,129 +1239,129 @@ class RyujinxLauncherApp:
             # ================================================================
             launch_target = "GAME" if len(sys.argv) > 1 else "RYUJINX"
 
-            tk.Label(
+            ctk.CTkLabel(
                 box,
                 text="⚠️ NO CONTROLLERS",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TITLE_SIZE'], s), "bold"),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['ALERT_YELLOW']
-            ).pack(pady=(scale_value(UI['ALERT_TITLE_PADDING_TOP'], s), scale_value(UI['ALERT_TITLE_PADDING_BOTTOM'], s)))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_TITLE_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['ALERT_YELLOW']
+            ).pack(pady=((UI['ALERT_TITLE_PADDING_TOP']), (UI['ALERT_TITLE_PADDING_BOTTOM'])))
 
-            tk.Label(
+            ctk.CTkLabel(
                 box,
                 text="Ryujinx will launch with default inputs.",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TEXT_SIZE'], s)),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['ALERT_TEXT_DIM']
-            ).pack(pady=scale_value(UI['ALERT_TEXT_PADDING'], s))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_TEXT_SIZE']),
+                fg_color="transparent",
+                text_color=COLOR['ALERT_TEXT_DIM']
+            ).pack(pady=(UI['ALERT_TEXT_PADDING']))
 
-            btn_frame = tk.Frame(box, bg=COLOR['ALERT_BOX_BG'])
-            btn_frame.pack(pady=scale_value(UI['ALERT_BTN_PADDING_TOP'], s))
+            btn_frame = ctk.CTkFrame(box, fg_color=COLOR['ALERT_BOX_BG'], corner_radius=0)
+            btn_frame.pack(pady=(UI['ALERT_BTN_PADDING_TOP']))
 
-            tk.Label(
+            ctk.CTkLabel(
                 btn_frame,
                 text=f"Ⓐ LAUNCH {launch_target}",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['NEON_BLUE']
-            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_BTN_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['NEON_BLUE']
+            ).pack(side="left", padx=(UI['ALERT_BTN_PADDING_X']))
 
-            tk.Label(
+            ctk.CTkLabel(
                 btn_frame,
                 text="Ⓑ BACK",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['NEON_RED']
-            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_BTN_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['NEON_RED']
+            ).pack(side="left", padx=(UI['ALERT_BTN_PADDING_X']))
 
         elif mode == "EXIT":
             # ================================================================
             # EXIT CONFIRMATION
             # ================================================================
-            tk.Label(
+            ctk.CTkLabel(
                 box,
                 text="EXIT LAUNCHER?",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TITLE_SIZE'], s), "bold"),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['TEXT_WHITE']
-            ).pack(pady=(scale_value(UI['ALERT_TITLE_PADDING_TOP'], s), scale_value(UI['ALERT_TITLE_PADDING_BOTTOM'], s)))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_TITLE_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['TEXT_WHITE']
+            ).pack(pady=((UI['ALERT_TITLE_PADDING_TOP']), (UI['ALERT_TITLE_PADDING_BOTTOM'])))
 
-            tk.Label(
+            ctk.CTkLabel(
                 box,
                 text="Are you sure you want to quit?",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TEXT_SIZE'], s)),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['ALERT_TEXT_DIM']
-            ).pack(pady=scale_value(UI['ALERT_TEXT_PADDING'], s))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_TEXT_SIZE']),
+                fg_color="transparent",
+                text_color=COLOR['ALERT_TEXT_DIM']
+            ).pack(pady=(UI['ALERT_TEXT_PADDING']))
 
-            btn_frame = tk.Frame(box, bg=COLOR['ALERT_BOX_BG'])
-            btn_frame.pack(pady=scale_value(UI['ALERT_BTN_PADDING_TOP'], s))
+            btn_frame = ctk.CTkFrame(box, fg_color=COLOR['ALERT_BOX_BG'], corner_radius=0)
+            btn_frame.pack(pady=(UI['ALERT_BTN_PADDING_TOP']))
 
-            tk.Label(
+            ctk.CTkLabel(
                 btn_frame,
                 text="Ⓐ YES",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['NEON_BLUE']
-            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_BTN_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['NEON_BLUE']
+            ).pack(side="left", padx=(UI['ALERT_BTN_PADDING_X']))
 
-            tk.Label(
+            ctk.CTkLabel(
                 btn_frame,
                 text="Ⓑ NO",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['NEON_RED']
-            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_BTN_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['NEON_RED']
+            ).pack(side="left", padx=(UI['ALERT_BTN_PADDING_X']))
 
         elif mode == "KILL_CONFIRM":
             # ================================================================
             # KILL GAME MENU (THREE OPTIONS)
             # ================================================================
-            tk.Label(
+            ctk.CTkLabel(
                 box,
                 text="KILL GAME?",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TITLE_SIZE'], s), "bold"),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['TEXT_WHITE']
-            ).pack(pady=(scale_value(UI['ALERT_TITLE_PADDING_TOP'], s), scale_value(UI['ALERT_TITLE_PADDING_BOTTOM'], s)))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_TITLE_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['TEXT_WHITE']
+            ).pack(pady=((UI['ALERT_TITLE_PADDING_TOP']), (UI['ALERT_TITLE_PADDING_BOTTOM'])))
 
-            tk.Label(
+            ctk.CTkLabel(
                 box,
                 text="How would you like to proceed?",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_TEXT_SIZE'], s)),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['ALERT_TEXT_DIM']
-            ).pack(pady=scale_value(UI['ALERT_TEXT_PADDING'], s))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_TEXT_SIZE']),
+                fg_color="transparent",
+                text_color=COLOR['ALERT_TEXT_DIM']
+            ).pack(pady=(UI['ALERT_TEXT_PADDING']))
 
-            btn_frame = tk.Frame(box, bg=COLOR['ALERT_BOX_BG'])
-            btn_frame.pack(pady=scale_value(UI['ALERT_BTN_PADDING_TOP'], s))
+            btn_frame = ctk.CTkFrame(box, fg_color=COLOR['ALERT_BOX_BG'], corner_radius=0)
+            btn_frame.pack(pady=(UI['ALERT_BTN_PADDING_TOP']))
 
             # Option 1: Return to launcher for controller reconfiguration
-            tk.Label(
+            ctk.CTkLabel(
                 btn_frame,
                 text="Ⓐ LAUNCHER",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['NEON_BLUE']
-            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_BTN_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['NEON_BLUE']
+            ).pack(side="left", padx=(UI['ALERT_BTN_PADDING_X']))
 
             # Option 2: Exit to desktop
-            tk.Label(
+            ctk.CTkLabel(
                 btn_frame,
                 text="Ⓨ DESKTOP",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['ALERT_YELLOW']
-            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_BTN_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['ALERT_YELLOW']
+            ).pack(side="left", padx=(UI['ALERT_BTN_PADDING_X']))
 
             # Option 3: Cancel and resume game
-            tk.Label(
+            ctk.CTkLabel(
                 btn_frame,
                 text="Ⓑ CANCEL",
-                font=(UI['FONT_FAMILY'], scale_font(UI['FONT_ALERT_BTN_SIZE'], s), "bold"),
-                bg=COLOR['ALERT_BOX_BG'],
-                fg=COLOR['NEON_RED']
-            ).pack(side="left", padx=scale_value(UI['ALERT_BTN_PADDING_X'], s))
+                font=(UI['FONT_FAMILY'], UI['FONT_ALERT_BTN_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['NEON_RED']
+            ).pack(side="left", padx=(UI['ALERT_BTN_PADDING_X']))
 
     def close_alert(self):
         self.alert_mode = None
@@ -1507,6 +1519,6 @@ class RyujinxLauncherApp:
 # ENTRY POINT
 # ============================================================================
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ctk.CTk()
     app = RyujinxLauncherApp(root)
     root.mainloop()

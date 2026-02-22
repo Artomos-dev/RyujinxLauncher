@@ -172,15 +172,15 @@ Run this command from the ProjectRoot terminal to create a standalone EXE/BIN/AP
 
 ### Windows
 
-`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets\RyujinxLauncherIcon.ico" --add-data "assets;assets" src\RyujinxLauncher.py`
+`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets\RyujinxLauncherIcon.ico" --add-data "assets;assets" --collect-all customtkinter src\RyujinxLauncher.py`
 
 ### MacOS
 
-`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets/RyujinxLauncherIcon.ico" --add-data "assets:assets" src/RyujinxLauncher.py`
+`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets/RyujinxLauncherIcon.ico" --add-data "assets:assets" --collect-all customtkinter src/RyujinxLauncher.py`
 
 ### Linux
 
-`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets/RyujinxLauncherPNG.png" --add-data "assets:assets" src/RyujinxLauncher.py`
+`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets/RyujinxLauncherPNG.png" --add-data "assets:assets" --collect-all customtkinter src/RyujinxLauncher.py`
 
 The resulting `RyujinxLauncher` executable will be in the `dist/` folder.
 
