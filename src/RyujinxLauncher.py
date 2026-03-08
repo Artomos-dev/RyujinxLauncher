@@ -208,7 +208,7 @@ Determines Ryujinx version.
 Returns: Ryujinx version string (1.1.1403/1.3.1/1.3.2/1.3.3/or newer)
 1. Windows: Reads PE metadata natively via ctypes.
 2. Mac: Reads native Info.plist (CFBundleLongVersionString).
-3. Linux: [ENV VAR OVERRIDE] → Log filename parsing → Conflict detection.
+3. Linux: Binary scan for embedded version string → [ENV VAR OVERRIDE fallback].
 """
 
 # Default to new version
@@ -262,87 +262,58 @@ if os.path.exists(exe_path):
                     raw = plistlib.load(f).get("CFBundleLongVersionString", ryujinx_version)
                     ryujinx_version = raw.split("-")[0].strip('"')  # "1.3.3-e2143d4" → "1.3.3"
             else:
-                messagebox.showerror(
-                    "One-Time Setup Required",
-                    "Could not detect your Ryujinx version automatically.\n\n"
-                    "This is a one-time setup step required when installing or upgrading Ryujinx.\n\n"
-                    "Please launch Ryujinx manually once to generate the required log files, then relaunch this launcher.\n\n"
-                    "If the issue persists, you can manually override the version using an environment variable:\n\n"
-                    "echo 'export RL_RYUJINX_VERSION=1.3.3' >> ~/.zshrc && source ~/.zshrc\n\n"
-                    "(Replace 1.3.3 with your actual version). Run this in Terminal."
-                )
-                sys.exit(1)
-
-        else:
-            # --- LINUX METHOD ---
-            # 1. HIGHEST PRIORITY: Environment variable override
-            env_version = os.environ.get("RL_RYUJINX_VERSION")
-            if env_version:
-                ryujinx_version = env_version.strip()
-
-            else:
-                # 2. Log filename parsing + conflict detection
-                xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-
-                linux_log_paths = [
-                    os.path.join(ryujinx_dir, "portable", "Logs"),
-                    os.path.join(ryujinx_dir, "Logs"),
-                    os.path.join(xdg_config, "Ryujinx", "Logs"),
-                    os.path.expanduser("~/.config/Ryujinx/Logs"),
-                    "/home/deck/.config/Ryujinx/Logs",
-                    os.path.expanduser("~/.var/app/org.ryujinx.Ryujinx/config/Ryujinx/Logs"),
-                    os.path.expanduser("~/.var/app/oio.github.ryubing.Ryujinx/config/Ryujinx/Logs")
-                ]
-
-                found_versions = set()
-
-                for logs_dir in linux_log_paths:
-                    if os.path.exists(logs_dir):
-                        log_files = sorted([
-                            f for f in os.listdir(logs_dir)
-                            if f.startswith("Ryujinx_") and f.endswith(".log")
-                        ])
-
-                        if log_files:
-                            latest_log = log_files[-1]  # Most recent log
-                            parts = latest_log.split('_')
-
-                            detected_v = None
-                            if len(parts) > 2 and parts[1].lower() == "canary":
-                                detected_v = parts[2]  # Ryujinx_canary_1.3.3_<date>.log
-                            elif len(parts) > 1:
-                                detected_v = parts[1]  # Ryujinx_1.3.3_<date>.log
-
-                            if detected_v:
-                                found_versions.add(detected_v)
-
-                if len(found_versions) == 1:
-                    ryujinx_version = found_versions.pop()
-
-                elif len(found_versions) > 1:
-                    versions_str = ", ".join(found_versions)
+                # Ideally this should never happen because Ryujinx embeds the version string in all official builds, but we add this as a fallback just in case
+                # Check for environment variable override before giving up
+                env_version = os.environ.get("RL_RYUJINX_VERSION")
+                if env_version:
+                    ryujinx_version = env_version.strip()
+                else:
+                    # If we can't find the version from binary and environment variable, show an error with instructions for the user to set it manually
                     messagebox.showerror(
-                        "Multiple Versions Detected",
-                        f"Found conflicting Ryujinx versions ({versions_str}) from multiple install locations.\n\n"
-                        "One-Time Setup Required\n\n"
-                        "To resolve this, please explicitly set your version using an environment variable before launching:\n\n"
-                        "echo 'export RL_RYUJINX_VERSION=1.3.3' >> ~/.bashrc && source ~/.bashrc\n\n"
-                        "(Replace 1.3.3 with your actual version). Run this in your terminal"
+                        "One-Time Setup Required",
+                        "Could not detect your Ryujinx version automatically.\n\n"
+                        "This is a one-time setup step required when installing or upgrading Ryujinx.\n\n"
+                        "echo 'export RL_RYUJINX_VERSION=1.3.3' >> ~/.zshrc && source ~/.zshrc\n\n"
+                        "(Replace 1.3.3 with your actual version). Run this in Terminal."
                     )
                     sys.exit(1)
 
+        else:
+            # --- LINUX METHOD (binary Search) ---
+            # Equivalent to: strings Ryujinx | grep 'Ryujinx/' | grep ':' | tail -1 | cut -d '"' -f2 | cut -d '/' -f2
+            # 1. Open the file in Binary Mode
+            with open(exe_path, 'rb') as f:
+                data = f.read()
+
+            # 2. This pattern is our "Pythonic Cut"
+            # ["]       -> Look for the opening double-quote
+            # Ryujinx/  -> Look for the literal text "Ryujinx/"
+            # ([^":]+)  -> CAPTURE everything that IS NOT a quote or a colon
+            # :         -> Look for the colon
+            pattern = b'"Ryujinx/([^":]+):'
+
+            match = re.search(pattern, data)
+
+            if match:
+                # match.group(1) is exactly like your 'cut -f2'
+                # It only contains the version part (e.g., 1.3.3)
+                ryujinx_version = match.group(1).decode('utf-8').strip()
+            else:
+                # Ideally this should never happen because Ryujinx embeds the version string in all official builds, but we add this as a fallback just in case
+                # Check for environment variable override before giving up
+                env_version = os.environ.get("RL_RYUJINX_VERSION")
+                if env_version:
+                    ryujinx_version = env_version.strip()
                 else:
+                    # If we can't find the version from binary and environment variable, show an error with instructions for the user to set it manually
                     messagebox.showerror(
                         "Ryujinx Version Missing",
                         "Could not detect your Ryujinx version automatically.\n\n"
                         "This is a one-time setup step required when installing or upgrading Ryujinx.\n\n"
-                        "1. Please try launching Ryujinx manually once without the launcher to generate log files.\n\n"
-                        "2. If that does not fix the issue, you can manually override it using an environment variable:\n\n"
                         "echo 'export RL_RYUJINX_VERSION=1.3.3' >> ~/.bashrc && source ~/.bashrc\n\n"
                         "(Replace 1.3.3 with your actual version). Run this in your terminal"
                     )
                     sys.exit(1)
-
     except Exception:
         pass  # Fall back to default "1.1.1403"
 
