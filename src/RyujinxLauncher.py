@@ -279,25 +279,31 @@ if os.path.exists(exe_path):
                     sys.exit(1)
 
         else:
-            # --- LINUX METHOD (binary Search) ---
-            # Equivalent to: strings Ryujinx | grep 'Ryujinx/' | grep ':' | tail -1 | cut -d '"' -f2 | cut -d '/' -f2
-            # 1. Open the file in Binary Mode
+            # --- LINUX METHOD (Binary Scan) ---
+            # Mimics: strings Ryujinx | grep 'Ryujinx/' | grep ':' | head -1 | cut -d '"' -f2 | cut -d '/' -f2
+
+            # Step 1: Read binary and decode to ASCII (strips all null bytes and non-printable chars)
             with open(exe_path, 'rb') as f:
                 data = f.read()
+            text = data.decode('ascii', errors='ignore')
 
-            # 2. This pattern is our "Pythonic Cut"
-            # ["]       -> Look for the opening double-quote
-            # Ryujinx/  -> Look for the literal text "Ryujinx/"
-            # ([^":]+)  -> CAPTURE everything that IS NOT a quote or a colon
-            # :         -> Look for the colon
-            pattern = b'"Ryujinx/([^":]+):'
+            # Step 2: Scan line by line for the embedded version string
+            # Looking for a line containing: "Ryujinx/1.3.3:..."
+            found_version = None
+            for line in text.splitlines():
+                if '"Ryujinx/' in line and ':' in line:
+                    # cut -d '"' -f2 → take part inside quotes
+                    # cut -d '/' -f2 → take part after the slash
+                    candidate = line.split('"')[1].split('/')[1].strip()
 
-            match = re.search(pattern, data)
+                    # Validate format is X.X.X before accepting (e.g. 1.3.3)
+                    if re.match(r'^\d+\.\d+\.\d+$', candidate):
+                        found_version = candidate
+                        break
 
-            if match:
-                # match.group(1) is exactly like your 'cut -f2'
-                # It only contains the version part (e.g., 1.3.3)
-                ryujinx_version = match.group(1).decode('utf-8').strip()
+            # Step 3: Apply result or fall back to env var override
+            if found_version:
+                ryujinx_version = found_version
             else:
                 # Ideally this should never happen because Ryujinx embeds the version string in all official builds, but we add this as a fallback just in case
                 # Check for environment variable override before giving up
