@@ -24,7 +24,7 @@ With features like hot-plug detection and a controller-based "Kill Combo" for ex
 
 **Visual & Intuitive:** Features a high-contrast side-rail UI with persistent pastel color-coding so you always know which controller belongs to which player at a glance.
 
-**Tested on Windows 11 with Ryujinx v1.1.1403/v1.3.1/v1.3.2/v1.3.3/Canary-v1.3.205**
+**Verified on Windows 11 and Ubuntu 24.04 (VM). Tested with Ryujinx versions v1.1.1403 through v1.3.3, including Canary builds v1.3.205 and v1.3.252.**
 
 ---
 
@@ -93,22 +93,14 @@ Example `RyujinxPath.config` content: `D:\emulators\Ryujinx`
 
 ## 🚧 Testing & Compatibility Status
 
-- **Windows:** ✅ **Verified.** Verified on Windows 11 across multiple stable and canary versions.
-- **SDL Version:** ⚠️ **Strictly SDL2.** (See compatibility note below).
-
-
-> **🛑 Important: Canary Build Compatibility Warning**: 
->* Ryujinx Canary builds starting from **v1.3.206** have migrated to **SDL3**. 
->* This launcher currently **only supports SDL2**.
->* ✅ **Supported:** Stable **v1.1.1403**, **v1.3.x**, Canary builds up to **v1.3.205**.
->* ❌ **Unsupported:** Canary builds **v1.3.206** and newer (SDL3).
+- **Supported:** Stable **v1.1.1403**, **v1.3.x**, and Canary builds **v1.3.x**.
 
 | Platform | Status | Tested Versions |
 | :--- | :--- | :--- |
-| **Windows 11** | ✅ **Verified** | **Old Stable:** v1.1.1403 <Br>**Stable:** v1.3.3 / v1.3.2 / v1.3.1 <br>**Canary:** Up to v1.3.205 |
+| **Windows 11** | ✅ **Verified** | **Old Stable:** v1.1.1403 <Br>**Stable:** v1.3.3 / v1.3.2 / v1.3.1 <br>**Canary:** v1.3.x |
 | **Windows 10** | ✅ Should Work | *Not explicitly tested, but architecture is identical.* |
 | **macOS 13+** | ⚠️ Untested | *Need testers!* |
-| **Linux** (Ubuntu/SteamOS) | ⚠️ Untested | *Need testers!* |
+| **Linux** |  ✅ **Basic test(VM)** | **Old Stable:** v1.1.1403 <Br>**Stable:** v1.3.3 / v1.3.2 / v1.3.1 <br>**Canary:** v1.3.x <Br>*Need testers!* |
 
 ---
 ## 🤝 Integration Guide
@@ -216,13 +208,13 @@ Under the following terms:
 ## 🔧 Troubleshooting
 
 **Controllers Not Detected**  
-✅ Ensure SDL2.dll is in the same folder as Ryujinx.exe  
+✅ Ensure SDL2.dll/SDL3.dll is in the same folder as Ryujinx.exe  
 ✅ Try unplugging and reconnecting controllers  
 ✅ Check Windows Device Manager for "Unknown USB Device"
 
 **Launcher Crashes on Start**  
 ✅ Missing Config.json → Launch Ryujinx normally once to generate it  
-✅ Missing SDL2.dll → Ensure it's in the same folder as Ryujinx.exe
+✅ Missing SDL2.dll/SDL3.dll → Ensure it's in the same folder as Ryujinx.exe
 
 **Kill Combo Not Working**  
 ✅ Hold all 3 buttons (⧉ + LB + RB) for ~1 second  
