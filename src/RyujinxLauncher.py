@@ -397,7 +397,16 @@ else:
     sys.exit(1)
 
 # ============================================================================
-# SECTION 7: CREATE ENVIRONMENT FOR RYUJINXLAUNCHER AND RYUJINX
+# SECTION 7a: LINUX LAUNCH WRAPPER DETECTION
+# ============================================================================
+# Prefer Ryujinx.sh over the raw binary when available.
+# The shell wrapper sets LANG=C.UTF-8, DOTNET_EnableAlternateStackCheck=1,
+# and enables gamemoderun if installed — giving better runtime stability.
+if sys.platform not in ("win32", "darwin") and os.path.exists(os.path.join(ryujinx_dir, "Ryujinx.sh")):
+    TARGET_EXE = os.path.join(ryujinx_dir, "Ryujinx.sh")
+
+# ============================================================================
+# SECTION 7b: CREATE ENVIRONMENT FOR RYUJINXLAUNCHER AND RYUJINX
 # ============================================================================
 
 if ryujinx_version == "1.1.1403":
