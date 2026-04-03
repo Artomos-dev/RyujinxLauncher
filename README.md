@@ -1,6 +1,6 @@
 # <img src="assets/RyujinxLauncherPNG.png" alt="Ryujinx Launcher Logo" width="24"> Ryujinx Launcher
 
-***Version 1.0.1***
+***Version 1.1.0***
 
 # <img src="https://repository-images.githubusercontent.com/1152064244/0948360e-bad3-48bb-be30-f2db1aeb4d71" alt="Ryujinx Launcher">
 ---
