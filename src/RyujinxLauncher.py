@@ -36,6 +36,11 @@ import time
 import random
 import glob
 
+from DebugLog import log
+from DebugLog import init_log
+
+LAUNCHER_VERSION = "1.0.1"
+
 # ============================================================================
 # SECTION 1: HI-DPI DISPLAY SUPPORT
 # ============================================================================
@@ -224,7 +229,8 @@ def mount_appimage():
         )
         sys.exit(1)
 
-    print(f"📦 AppImage mounted at: {mount_point}")
+    log("INFO", "AppImage detected", appimage_path)
+    log("INFO", "AppImage mounted at", mount_point)
     return os.path.join(mount_point, "usr", "bin")
 
 def unmount_appimage():
@@ -236,7 +242,7 @@ def unmount_appimage():
 
     mount_proc.terminate()
     mount_proc = None
-    print("📦 AppImage unmounted")
+    log("INFO", "AppImage unmounted")
 
 # ============================================================================
 # SECTION 5: PLATFORM-SPECIFIC CONFIGURATION
@@ -265,6 +271,17 @@ else:  # Linux
         ryujinx_dir = mount_appimage()
     TARGET_EXE = os.path.join(ryujinx_dir, "Ryujinx")
     CONFIG_FILE = os.path.expanduser("~/.config/Ryujinx/Config.json")
+
+# Init logger immediately after platform config is resolved
+_log_dir = os.path.join(ryujinx_dir, "Logs") if sys.platform == "win32" \
+           else os.path.expanduser("~/.config/Ryujinx/Logs")
+init_log(_log_dir, LAUNCHER_VERSION)
+
+log("INFO", "═══ RyujinxLauncher", LAUNCHER_VERSION + " ═══")
+log("INFO", "OS", sys.platform + (" (AppImage)" if is_appimage else ""))
+log("INFO", "Ryujinx dir", ryujinx_dir)
+log("INFO", "Config", CONFIG_FILE)
+log("INFO", "TARGET_EXE", TARGET_EXE)
 
 # ============================================================================
 # SECTION 6: RYUJINX VERSION DETECTION
@@ -318,6 +335,7 @@ if os.path.exists(exe_path):
                 v2 = (ffi.dwFileVersionMS >>  0) & 0xFFFF
                 v3 = (ffi.dwFileVersionLS >> 16) & 0xFFFF
                 ryujinx_version = f"{v1}.{v2}.{v3}"
+                log("INFO", "Ryujinx version detected (Windows PE)", ryujinx_version)
 
         elif sys.platform == "darwin":
             # --- MAC METHOD (Native Plist) ---
@@ -327,13 +345,16 @@ if os.path.exists(exe_path):
                 with open(plist_path, 'rb') as f:
                     raw = plistlib.load(f).get("CFBundleLongVersionString", ryujinx_version)
                     ryujinx_version = raw.split("-")[0].strip('"')  # "1.3.3-e2143d4" → "1.3.3"
+                    log("INFO", "Ryujinx version detected (macOS plist)", ryujinx_version)
             else:
                 # Ideally this should never happen because Ryujinx embeds the version string in all official builds, but we add this as a fallback just in case
                 # Check for environment variable override before giving up
                 env_version = os.environ.get("RL_RYUJINX_VERSION")
                 if env_version:
                     ryujinx_version = env_version.strip()
+                    log("INFO", "Ryujinx version override (env var)", ryujinx_version)
                 else:
+                    log("ERROR", "Ryujinx version not found (macOS)")
                     # If we can't find the version from binary and environment variable, show an error with instructions for the user to set it manually
                     messagebox.showerror(
                         "One-Time Setup Required",
@@ -370,13 +391,16 @@ if os.path.exists(exe_path):
             # Step 3: Apply result or fall back to env var override
             if found_version:
                 ryujinx_version = found_version
+                log("INFO", "Ryujinx version detected (binary scan)", ryujinx_version)
             else:
                 # Ideally this should never happen because Ryujinx embeds the version string in all official builds, but we add this as a fallback just in case
                 # Check for environment variable override before giving up
                 env_version = os.environ.get("RL_RYUJINX_VERSION")
                 if env_version:
                     ryujinx_version = env_version.strip()
+                    log("INFO", "Ryujinx version override (env var)", ryujinx_version)
                 else:
+                    log("ERROR", "Ryujinx version not found (Linux)")
                     # If we can't find the version from binary and environment variable, show an error with instructions for the user to set it manually
                     messagebox.showerror(
                         "Ryujinx Version Missing",
@@ -386,10 +410,13 @@ if os.path.exists(exe_path):
                         "(Replace 1.3.3 with your actual version). Run this in your terminal"
                     )
                     sys.exit(1)
-    except Exception:
+    except Exception as e:
+        log("WARNING", "Version detection failed, falling back to", ryujinx_version)
+        log("EXCEPTION", "Version detection exception", e)
         pass  # Fall back to default "1.1.1403"
 
 else:
+    log("ERROR", "Ryujinx binary not found", TARGET_EXE)
     messagebox.showerror(
         "Ryujinx Missing",
         f"Could not find {TARGET_EXE} in:\n{ryujinx_dir}"
@@ -404,6 +431,7 @@ else:
 # and enables gamemoderun if installed — giving better runtime stability.
 if sys.platform not in ("win32", "darwin") and os.path.exists(os.path.join(ryujinx_dir, "Ryujinx.sh")):
     TARGET_EXE = os.path.join(ryujinx_dir, "Ryujinx.sh")
+    log("INFO", "Launch wrapper detected", TARGET_EXE)
 
 # ============================================================================
 # SECTION 7b: CREATE ENVIRONMENT FOR RYUJINXLAUNCHER AND RYUJINX
@@ -419,14 +447,14 @@ ryujinx_env = os.environ.copy()
 # ============================================================================
 
 if tuple(map(int, re.findall(r'\d+', ryujinx_version))) <= tuple(map(int, re.findall(r'\d+', "1.3.205"))):
-    print("🔵 Using SDL2 backend")
-    print(f"🔍 Looking for SDL2 in {ryujinx_dir} ...")
+    log("INFO", "SDL backend", "SDL2")
+    log("INFO", "SDL2 path", ryujinx_dir)
     os.environ["PYSDL2_DLL_PATH"] = ryujinx_dir
     from ControllerManagerSDL2 import SDLManager
     backend_string="GamepadSDL2"
 else:
-    print("🟢 Using SDL3 backend")
-    print(f"🔍 Looking for SDL3 in {ryujinx_dir} ...")
+    log("INFO", "SDL backend", "SDL3")
+    log("INFO", "SDL3 path", ryujinx_dir)
     os.environ["SDL_BINARY_PATH"] = ryujinx_dir
     os.environ["SDL_DOWNLOAD_BINARIES"] = "0" # Disable SDL Lib Download, "1" by default.
     os.environ["SDL_DISABLE_METADATA"] = "1" # Disable metadata method, "0" by default.
@@ -839,6 +867,8 @@ class RyujinxLauncherApp:
                             template = copy.deepcopy(entry)
                             break
             except Exception as e:
+                log("ERROR", "Config file corrupted", file_path)
+                log("EXCEPTION", "Config read exception", e)
                 # Corrupted config, use fallback
                 messagebox.showerror(
                     "Configuration Error",
@@ -924,6 +954,7 @@ class RyujinxLauncherApp:
         """Kill Ryujinx process and exit launcher (used by kill menu → Desktop option)."""
         if self.ryujinx_process:
             self.ryujinx_process.kill()
+            log("INFO", "Ryujinx killed — exiting to desktop")
         unmount_appimage()
         self.root.quit()
         sys.exit()
@@ -939,6 +970,7 @@ class RyujinxLauncherApp:
 
         if self.ryujinx_process:
             self.ryujinx_process.kill()
+            log("INFO", "Ryujinx killed — returning to launcher")
         self.ryujinx_process = None
 
         # Reset launcher state for fresh assignment
@@ -970,6 +1002,7 @@ class RyujinxLauncherApp:
             if self.ryujinx_process.poll() is not None:
                 if self.returning_to_launcher:
                     # User chose "Launcher" from kill menu - reset and show UI
+                    log("INFO", "Ryujinx exited — returning to launcher")
                     self.assignments = []
                     self.refresh_grid()
                     self.root.deiconify()
@@ -978,6 +1011,7 @@ class RyujinxLauncherApp:
                     self.returning_to_launcher = False
                 else:
                     # Ryujinx closed normally or crashed - exit launcher
+                    log("INFO", "Ryujinx exited — closing launcher")
                     self.root.quit()
                     sys.exit()
 
@@ -996,6 +1030,7 @@ class RyujinxLauncherApp:
 
             if kill_combo:
                 self.root.deiconify()  # Bring launcher to foreground
+                log("INFO", "Kill combo detected — showing menu")
                 self.show_alert("KILL_CONFIRM")
                 self.root.after(16, self.update_loop)
                 return
@@ -1055,6 +1090,7 @@ class RyujinxLauncherApp:
             if dropped_names:
                 self.show_toast(f"⚠️ {dropped_names[0][1]} Disconnected!", self.hid_colors[dropped_names[0][0]])
                 for path, name in dropped_names:
+                    log("INFO", "Controller disconnected", name)
                     color = self.hid_colors.pop(path, None)
                     if color:
                         self.color_pool.append(color)
@@ -1139,6 +1175,7 @@ class RyujinxLauncherApp:
             return
 
         self.assignments.append((target_path, display_name))
+        log("INFO", f"Assigned {display_name} → Player {len(self.assignments)}")
         self.refresh_grid()
 
     def remove_player(self, instance_id):
@@ -1162,6 +1199,7 @@ class RyujinxLauncherApp:
 
         if found_index != -1:
             self.assignments.pop(found_index)
+            log("INFO", f"Removed {target_path} from Player {found_index + 1}")
             self.refresh_grid()
 
     # ========================================================================
@@ -1544,6 +1582,7 @@ class RyujinxLauncherApp:
         Passes any command-line arguments (e.g., game path from Playnite) to Ryujinx.
         """
         self.save_config()
+        log("INFO", "Launching", str([TARGET_EXE] + sys.argv[1:]))
         self.root.withdraw()  # Hide launcher window
         self.returning_to_launcher = False  # Clear restart flag
 
@@ -1553,12 +1592,14 @@ class RyujinxLauncherApp:
                 cmd_args = [TARGET_EXE] + sys.argv[1:]
                 self.ryujinx_process = subprocess.Popen(cmd_args, env=ryujinx_env)
             except Exception as e:
+                log("EXCEPTION", "Launch failed", e)
                 messagebox.showerror(
                     "Launch Error",
                     f"Failed to start Ryujinx.\n{e}"
                 )
                 sys.exit()
         else:
+            log("ERROR", "TARGET_EXE not found", TARGET_EXE)
             messagebox.showerror(
                 "Missing File",
                 f"Could not find {TARGET_EXE}"
