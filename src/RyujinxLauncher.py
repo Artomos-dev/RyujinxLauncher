@@ -39,7 +39,7 @@ import glob
 from DebugLog import log
 from DebugLog import init_log
 
-LAUNCHER_VERSION = "1.0.1"
+LAUNCHER_VERSION = "1.1.0"
 
 # ============================================================================
 # SECTION 1: HI-DPI DISPLAY SUPPORT
