@@ -55,23 +55,28 @@ class SDLManager:
         - sdl3.fn : direct SDL3 function aliases (blocks self injection)
         - @staticmethod def     : custom logic wrapping SDL3 calls
     """
-
+    axis_engaged = {}
     # =========================================================================
     # BUTTON CONSTANTS  (integers — plain class attribute)
     # =========================================================================
-    SDL_CONTROLLER_BUTTON_A              = sdl3.SDL_GAMEPAD_BUTTON_SOUTH          # Cross / A
-    SDL_CONTROLLER_BUTTON_B              = sdl3.SDL_GAMEPAD_BUTTON_EAST           # Circle / B
-    SDL_CONTROLLER_BUTTON_X              = sdl3.SDL_GAMEPAD_BUTTON_WEST           # Square / X
-    SDL_CONTROLLER_BUTTON_Y              = sdl3.SDL_GAMEPAD_BUTTON_NORTH          # Triangle / Y
-    SDL_CONTROLLER_BUTTON_START          = sdl3.SDL_GAMEPAD_BUTTON_START
-    SDL_CONTROLLER_BUTTON_BACK           = sdl3.SDL_GAMEPAD_BUTTON_BACK
-    SDL_CONTROLLER_BUTTON_LEFT_SHOULDER  = sdl3.SDL_GAMEPAD_BUTTON_LEFT_SHOULDER
-    SDL_CONTROLLER_BUTTON_RIGHT_SHOULDER = sdl3.SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER
+    SDL_CONTROLLER_BUTTON_A                 = sdl3.SDL_GAMEPAD_BUTTON_SOUTH          # Cross / A
+    SDL_CONTROLLER_BUTTON_B                 = sdl3.SDL_GAMEPAD_BUTTON_EAST           # Circle / B
+    SDL_CONTROLLER_BUTTON_X                 = sdl3.SDL_GAMEPAD_BUTTON_WEST           # Square / X
+    SDL_CONTROLLER_BUTTON_Y                 = sdl3.SDL_GAMEPAD_BUTTON_NORTH          # Triangle / Y
+    SDL_CONTROLLER_BUTTON_START             = sdl3.SDL_GAMEPAD_BUTTON_START
+    SDL_CONTROLLER_BUTTON_BACK              = sdl3.SDL_GAMEPAD_BUTTON_BACK
+    SDL_CONTROLLER_BUTTON_LEFT_SHOULDER     = sdl3.SDL_GAMEPAD_BUTTON_LEFT_SHOULDER
+    SDL_CONTROLLER_BUTTON_RIGHT_SHOULDER    = sdl3.SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER
+    SDL_CONTROLLER_BUTTON_DPAD_LEFT         = sdl3.SDL_GAMEPAD_BUTTON_DPAD_LEFT
+    SDL_CONTROLLER_BUTTON_DPAD_RIGHT        = sdl3.SDL_GAMEPAD_BUTTON_DPAD_RIGHT
+    SDL_CONTROLLER_BUTTON_DPAD_UP           = sdl3.SDL_GAMEPAD_BUTTON_DPAD_UP
+    SDL_CONTROLLER_BUTTON_DPAD_DOWN         = sdl3.SDL_GAMEPAD_BUTTON_DPAD_DOWN
 
     # =========================================================================
     # EVENT CONSTANTS  (integers — plain class attribute)
     # =========================================================================
     SDL_CONTROLLERBUTTONDOWN        = sdl3.SDL_EVENT_GAMEPAD_BUTTON_DOWN
+    SDL_CONTROLLERAXISMOTION        = sdl3.SDL_EVENT_GAMEPAD_AXIS_MOTION
     SDL_QUIT                        = sdl3.SDL_EVENT_QUIT
 
     # =========================================================================
@@ -156,3 +161,27 @@ class SDLManager:
     def get_button_info(event):
         """Returns (button, which) from a gamepad button event."""
         return event.gbutton.button, event.gbutton.which
+
+    @staticmethod
+    def get_axis_motion_info(event):
+        """
+        Analyzes axis motion event for profile cycling.
+        Returns (direction, which) where direction is -1 (left), 1 (right), or 0 (none).
+        """
+        axis_data_max=32767
+        axis_data_min=-32767
+        tilt_threshold=0.99
+
+        try:
+            axis_data = event.gaxis
+            if axis_data.axis == sdl3.SDL_GAMEPAD_AXIS_LEFTX:
+                which = axis_data.which          # always capture which
+                if axis_data.value < (axis_data_min * tilt_threshold):
+                    return -1, which
+                elif axis_data.value > (axis_data_max * tilt_threshold):
+                    return 1, which
+                else:
+                    return 0, which              # centered — return which so caller can reset state
+        except Exception:
+            pass
+        return 0, None

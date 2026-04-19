@@ -621,11 +621,12 @@ class RyujinxLauncherApp:
 
         # State management
         self.controllers = {}               # {instance_id: SDL_GameController}
-        self.assignments = []               # [(hid_path, display_name), ...] - Player order
+        self.assignments = []               # [{"path", "name", "profile_idx", "is_editing"}, ...] - Player order
         self.hardware_map = {}              # {instance_id: (hid_path, display_name)} - Currently connected
         self.color_pool = list(COLOR_POOL) # Copy the pool to modify it locally
         random.shuffle(self.color_pool)     # Shuffle the color pool
         self.hid_colors = {}                # Dictionary to remember {hid_path: color_hex}
+        self.hid_profiles = {}              # Dictionary to remember {hid_path: profile_idx} across reconnects
         self.alert_mode = None              # Current alert type (if any)
         self.alert_frame = None             # Alert dialog container
         self.ryujinx_process = None         # Ryujinx subprocess handle
@@ -634,6 +635,9 @@ class RyujinxLauncherApp:
 
         # Load existing controller mapping template from Config.json
         self.master_template = self.load_config_data(CONFIG_FILE)
+
+        # Load available controller profiles from Ryujinx profiles directory
+        self.available_profiles = self.load_ryujinx_profiles()
 
         # Build UI
         self.build_ui()
@@ -787,13 +791,22 @@ class RyujinxLauncherApp:
             # Disconnect hint label (bottom, initially hidden)
             lbl_disc = ctk.CTkLabel(
                 card,
-                text="Ⓑ DISCONNECT",
+                text="Ⓑ DISCONNECT   |   Ⓧ PROFILE",
                 font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold"),
                 fg_color="transparent",
                 text_color=COLOR['NEON_RED']
             )
 
-            self.slot_cards.append((card, lbl_num, lbl_status, lbl_disc))
+            # Profile selector label (center, hidden by default - shown in State B)
+            lbl_profile = ctk.CTkLabel(
+                card,
+                text="◄   Profile: RL Default   ►",
+                font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold"),
+                fg_color="transparent",
+                text_color=COLOR['TEXT_DIM']
+            )
+
+            self.slot_cards.append((card, lbl_num, lbl_status, lbl_disc, lbl_profile))
 
         # Footer: Button hints
         self.footer_frame = ctk.CTkFrame(
@@ -878,6 +891,41 @@ class RyujinxLauncherApp:
                 )
                 sys.exit(1)  # Stop the launcher immediately
         return template
+
+    def load_ryujinx_profiles(self):
+        """
+        Load controller profiles from Ryujinx's profiles/controller/ directory.
+
+        Default is always the hardcoded "RL Default (master_template)".
+        Remaining entries are loaded from *.json files on disk.
+        Fields injected by save_config (backend, id, name, controller_type,
+        player_index) are stripped from loaded profiles so save_config can
+        inject the correct values at launch time. If "RL Default.json" found
+        RL Default value will be changed to "RL Default.json" values
+
+        Returns:
+            dict: {"display_name": data_dict, ...}
+        """
+        profiles = {"RL Default": copy.deepcopy(self.master_template)}
+
+        profiles_dir = os.path.join(os.path.dirname(CONFIG_FILE), "profiles", "controller")
+
+        if os.path.isdir(profiles_dir):
+            for filepath in sorted(glob.glob(os.path.join(profiles_dir, "*.json"))):
+                try:
+                    with open(filepath, 'r') as f:
+                        raw = json.load(f)
+                    # Strip fields that save_config will inject at launch time
+                    for key in ("backend", "id", "name", "controller_type", "player_index"):
+                        raw.pop(key, None)
+                    display_name = os.path.splitext(os.path.basename(filepath))[0]
+                    profiles[display_name] = raw
+                except Exception as e:
+                    log("WARNING", "Skipping corrupted profile", filepath)
+                    log("EXCEPTION", "Profile load exception", e)
+
+        log("INFO", "Profiles loaded", str(len(profiles)))
+        return profiles
 
     def ryujinx_guid_fix(self, raw_hex):
         """
@@ -1075,11 +1123,11 @@ class RyujinxLauncherApp:
 
         current_connected_paths = set(path for path, _ in self.hardware_map.values())
 
-        for path, name in self.assignments:
-            if path in current_connected_paths:
-                new_assignments.append((path, name))  # Still connected, keep assignment
+        for assignment in self.assignments:
+            if assignment["path"] in current_connected_paths:
+                new_assignments.append(assignment)  # Still connected, keep assignment
             else:
-                dropped_names.append((path,name))  # Disconnected, remove assignment
+                dropped_names.append((assignment["path"], assignment["name"]))  # Disconnected
 
         # Update state if any controllers were removed
         if len(new_assignments) != len(self.assignments):
@@ -1094,6 +1142,7 @@ class RyujinxLauncherApp:
                     color = self.hid_colors.pop(path, None)
                     if color:
                         self.color_pool.append(color)
+                    self.hid_profiles.pop(path, None)  # Clear profile on hardware disconnect
 
         # ====================================================================
         # GAMEPAD BUTTON EVENT PROCESSING
@@ -1135,14 +1184,33 @@ class RyujinxLauncherApp:
                         continue
 
                     if button == SDLManager.SDL_CONTROLLER_BUTTON_A:
-                        self.assign_player(which)  # Assign controller
+                        self.assign_player(which)       # Assign controller
                     elif button == SDLManager.SDL_CONTROLLER_BUTTON_B:
-                        self.remove_player(which)  # Remove assignment
+                        # Cancel profile edit if active, otherwise disconnect
+                        slot_idx = self.find_slot_by_instance(which)
+                        if slot_idx != -1 and self.assignments[slot_idx]["is_editing"]:
+                            self.assignments[slot_idx]["is_editing"] = False
+                            self.refresh_grid()
+                        else:
+                            self.remove_player(which)   # Remove assignment
+                    elif button == SDLManager.SDL_CONTROLLER_BUTTON_X:
+                        self.toggle_profile_edit(which) # Enter/confirm profile selection
+                    elif button == SDLManager.SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+                        self.cycle_profile(which, -1)   # Previous profile
+                    elif button == SDLManager.SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+                        self.cycle_profile(which, 1)    # Next profile
                     elif button == SDLManager.SDL_CONTROLLER_BUTTON_START:
-                        self.check_launch()        # Launch Ryujinx
+                        self.check_launch()             # Launch Ryujinx
                     elif button == SDLManager.SDL_CONTROLLER_BUTTON_BACK:
-                        self.show_exit_confirmation()  # Exit launcher
-
+                        self.show_exit_confirmation()   # Exit launcher
+            elif event.type == SDLManager.SDL_CONTROLLERAXISMOTION:
+                direction, which = SDLManager.get_axis_motion_info(event)
+                if which is not None:
+                    if direction != 0 and not SDLManager.axis_engaged.get(which, False):
+                        SDLManager.axis_engaged[which] = True
+                        self.cycle_profile(which, direction)
+                    elif direction == 0:
+                        SDLManager.axis_engaged[which] = False  # reset when stick returns to center
             elif event.type == SDLManager.SDL_QUIT:
                 unmount_appimage()
                 self.root.destroy()
@@ -1166,16 +1234,24 @@ class RyujinxLauncherApp:
         target_path, display_name = self.hardware_map[instance_id]
 
         # Prevent duplicate assignments (same controller can't be multiple players)
-        for path, _ in self.assignments:
-            if path == target_path:
+        for assignment in self.assignments:
+            if assignment["path"] == target_path:
                 return
 
         # Enforce 8-player maximum
         if len(self.assignments) >= 8:
             return
 
-        self.assignments.append((target_path, display_name))
-        log("INFO", f"Assigned {display_name} → Player {len(self.assignments)}")
+        # Restore previously selected profile for this HID, default to RL Default
+        profile_key = self.hid_profiles.get(target_path, "RL Default")
+
+        self.assignments.append({
+            "path": target_path,
+            "name": display_name,
+            "profile_key": profile_key,
+            "is_editing": False
+        })
+        log("INFO", f"Assigned {display_name} → Player {len(self.assignments)} | Profile: {profile_key}")
         self.refresh_grid()
 
     def remove_player(self, instance_id):
@@ -1192,8 +1268,8 @@ class RyujinxLauncherApp:
 
         # Find and remove assignment by HID path
         found_index = -1
-        for i, (path, _) in enumerate(self.assignments):
-            if path == target_path:
+        for i, assignment in enumerate(self.assignments):
+            if assignment["path"] == target_path:
                 found_index = i
                 break
 
@@ -1201,6 +1277,69 @@ class RyujinxLauncherApp:
             self.assignments.pop(found_index)
             log("INFO", f"Removed {target_path} from Player {found_index + 1}")
             self.refresh_grid()
+
+    # ========================================================================
+    # PROFILE SELECTION LOGIC
+    # ========================================================================
+    def find_slot_by_instance(self, instance_id):
+        """
+        Find the assignments index for a given controller instance ID.
+
+        Args:
+            instance_id (int): SDL2/SDL3 instance ID of the controller
+
+        Returns:
+            int: Index into self.assignments, or -1 if not found
+        """
+        if instance_id not in self.hardware_map:
+            return -1
+        target_path, _ = self.hardware_map[instance_id]
+        for i, assignment in enumerate(self.assignments):
+            if assignment["path"] == target_path:
+                return i
+        return -1
+
+    def toggle_profile_edit(self, instance_id):
+        """
+        Toggle profile selection mode (State A ↔ State B) for a controller's slot.
+
+        X in State A → enters edit mode.
+        X in State B → confirms current selection and exits edit mode.
+
+        Args:
+            instance_id (int): SDL2/SDL3 instance ID of the controller
+        """
+        slot_idx = self.find_slot_by_instance(instance_id)
+        if slot_idx == -1:
+            return  # Controller not assigned to any slot
+        self.assignments[slot_idx]["is_editing"] = not self.assignments[slot_idx]["is_editing"]
+        if not self.assignments[slot_idx]["is_editing"]:
+            # X pressed to confirm
+            log("INFO", f"Player {slot_idx + 1} profile confirmed → {self.assignments[slot_idx]['profile_key']}")
+
+        self.refresh_grid()
+
+    def cycle_profile(self, instance_id, direction):
+        """
+        Cycle through available profiles for a controller's slot.
+        Only acts when that slot is in edit mode (is_editing == True).
+
+        Args:
+            instance_id (int): SDL2/SDL3 instance ID of the controller
+            direction (int): +1 for next, -1 for previous
+        """
+        slot_idx = self.find_slot_by_instance(instance_id)
+        if slot_idx == -1:
+            return
+        assignment = self.assignments[slot_idx]
+        if not assignment["is_editing"]:
+            return  # D-Pad ignored unless in profile selection mode
+        keys = list(self.available_profiles.keys())
+        current_idx = keys.index(assignment["profile_key"])
+        new_key = keys[(current_idx + direction) % len(keys)]
+        assignment["profile_key"] = new_key
+        self.hid_profiles[assignment["path"]] = new_key
+        self.refresh_grid()
 
     # ========================================================================
     # UI UPDATE METHODS
@@ -1227,13 +1366,17 @@ class RyujinxLauncherApp:
         """Update all player slot cards to reflect current assignments."""
 
         for i in range(8):
-            card, lbl_num, lbl_status, lbl_disc = self.slot_cards[i]
+            card, lbl_num, lbl_status, lbl_disc, lbl_profile = self.slot_cards[i]
 
             if i < len(self.assignments):
                 # ============================================================
                 # ACTIVE SLOT (Controller assigned)
                 # ============================================================
-                hid_path, display_name = self.assignments[i]
+                assignment = self.assignments[i]
+                hid_path = assignment["path"]
+                display_name = assignment["name"]
+                is_editing = assignment["is_editing"]
+                profile_name = assignment["profile_key"]
 
                 # --- Get the sticky pastel color ---
                 active_color = self.get_assigned_color(hid_path)
@@ -1251,24 +1394,52 @@ class RyujinxLauncherApp:
                 # Update Player Number Color (Use active_color)
                 lbl_num.configure(fg_color="transparent", text_color=active_color)
 
-                # Update Name Text Color (Use active_color)
-                lbl_status.place(relx=0.5, rely=0.25, anchor="center")
-                lbl_status.configure(
-                    text=clean_name,
-                    fg_color="transparent",
-                    text_color=active_color,
-                    font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold")
-                )
+                if is_editing:
+                    # ========================================================
+                    # STATE B: Profile Selection Mode
+                    # ========================================================
+                    lbl_status.place_forget()
 
-                # Show disconnect hint (Keep Red for "Danger/Action")
-                lbl_disc.place(relx=0.5, rely=0.75, anchor="center")
-                lbl_disc.configure(fg_color="transparent", text_color=COLOR['NEON_RED'])
+                    lbl_profile.configure(
+                        text=f"◄   Profile: {profile_name}   ►",
+                        fg_color="transparent",
+                        text_color=active_color,
+                        font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold")
+                    )
+                    lbl_profile.place(relx=0.5, rely=0.35, anchor="center")
+
+                    lbl_disc.place(relx=0.5, rely=0.75, anchor="center")
+                    lbl_disc.configure(
+                        text="Ⓑ CANCEL   |   Ⓧ CONFIRM",
+                        fg_color="transparent",
+                        text_color=COLOR['NEON_RED']
+                    )
+
+                else:
+                    # ========================================================
+                    # STATE A: Normal Mode
+                    # ========================================================
+                    lbl_profile.place_forget()
+
+                    lbl_status.place(relx=0.5, rely=0.25, anchor="center")
+                    lbl_status.configure(
+                        text=clean_name,
+                        fg_color="transparent",
+                        text_color=active_color,
+                        font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold")
+                    )
+
+                    lbl_disc.place(relx=0.5, rely=0.75, anchor="center")
+                    lbl_disc.configure(
+                        text="Ⓑ DISCONNECT   |   Ⓧ PROFILE",
+                        fg_color="transparent",
+                        text_color=COLOR['NEON_RED']
+                    )
 
             else:
                 # ============================================================
                 # INACTIVE SLOT (No controller assigned)
                 # ============================================================
-                # (This part remains exactly the same as your original code)
                 card.configure(
                     fg_color=COLOR['BG_CARD'],
                     border_color=COLOR['BG_CARD']
@@ -1282,6 +1453,7 @@ class RyujinxLauncherApp:
                     font=(UI['FONT_FAMILY'], UI['FONT_CARD_SIZE'], "bold")
                 )
                 lbl_disc.place_forget()
+                lbl_profile.place_forget()
 
     # ========================================================================
     # ALERT DIALOG SYSTEM
@@ -1540,7 +1712,9 @@ class RyujinxLauncherApp:
 
         new_input = []
 
-        for i, (assigned_path, _) in enumerate(self.assignments):
+        for i, assignment in enumerate(self.assignments):
+            assigned_path = assignment["path"]
+
             # Find hardware entry matching this assignment's HID path
             matched_hw = next(
                 (x for x in final_hw_list if x["path"] == assigned_path),
@@ -1548,8 +1722,10 @@ class RyujinxLauncherApp:
             )
 
             if matched_hw:
-                # Create controller config entry
-                entry = copy.deepcopy(self.master_template)
+                # Use the profile selected for this controller
+                profile_data = self.available_profiles[assignment["profile_key"]]
+                log("INFO", f"Saving -> Player {i+1} | {matched_hw['name']} | Profile: {assignment['profile_key']}")
+                entry = copy.deepcopy(profile_data)
                 entry["id"] = matched_hw["ryu_id"]      # Correct GUID with index
                 if ryujinx_version == "1.1.1403":
                     # Ryujinx (v1.1.1403)

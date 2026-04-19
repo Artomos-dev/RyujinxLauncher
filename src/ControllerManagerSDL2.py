@@ -48,7 +48,7 @@ class SDLManager:
         - sdl2.fn : direct SDL2 function aliases (blocks self injection)
         - @staticmethod def     : custom logic wrapping SDL2 calls
     """
-
+    axis_engaged = {}
     # =========================================================================
     # BUTTON CONSTANTS  (integers — plain class attribute)
     # =========================================================================
@@ -60,11 +60,16 @@ class SDLManager:
     SDL_CONTROLLER_BUTTON_BACK              = sdl2.SDL_CONTROLLER_BUTTON_BACK
     SDL_CONTROLLER_BUTTON_LEFT_SHOULDER     = sdl2.SDL_CONTROLLER_BUTTON_LEFTSHOULDER
     SDL_CONTROLLER_BUTTON_RIGHT_SHOULDER    = sdl2.SDL_CONTROLLER_BUTTON_RIGHTSHOULDER
+    SDL_CONTROLLER_BUTTON_DPAD_LEFT         = sdl2.SDL_CONTROLLER_BUTTON_DPAD_LEFT
+    SDL_CONTROLLER_BUTTON_DPAD_RIGHT        = sdl2.SDL_CONTROLLER_BUTTON_DPAD_RIGHT
+    SDL_CONTROLLER_BUTTON_DPAD_UP           = sdl2.SDL_CONTROLLER_BUTTON_DPAD_UP
+    SDL_CONTROLLER_BUTTON_DPAD_DOWN         = sdl2.SDL_CONTROLLER_BUTTON_DPAD_DOWN
 
     # =========================================================================
     # EVENT CONSTANTS  (integers — plain class attribute)
     # =========================================================================
     SDL_CONTROLLERBUTTONDOWN        = sdl2.SDL_CONTROLLERBUTTONDOWN
+    SDL_CONTROLLERAXISMOTION        = sdl2.SDL_CONTROLLERAXISMOTION
     SDL_QUIT                        = sdl2.SDL_QUIT
 
     # =========================================================================
@@ -133,3 +138,26 @@ class SDLManager:
     def get_button_info(event):
         """Returns (button, which) from a gamepad button event."""
         return event.cbutton.button, event.cbutton.which
+
+    @staticmethod
+    def get_axis_motion_info(event):
+        """
+        Analyzes axis motion event for profile cycling.
+        Returns (direction, which) where direction is -1 (left), 1 (right), or 0 (none).
+        """
+        axis_data_max=32767
+        axis_data_min=-32767
+        tilt_threshold=0.99
+        try:
+            axis_data = event.caxis
+            if axis_data.axis == sdl2.SDL_CONTROLLER_AXIS_LEFTX:
+                which = axis_data.which          # always capture which
+                if axis_data.value < (axis_data_min * tilt_threshold):
+                    return -1, which
+                elif axis_data.value > (axis_data_max * tilt_threshold):
+                    return 1, which
+                else:
+                    return 0, which              # centered — return which so caller can reset state
+        except Exception:
+            pass
+        return 0, None
