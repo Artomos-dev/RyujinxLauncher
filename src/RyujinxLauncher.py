@@ -25,7 +25,6 @@ Tested with: Ryujinx 1.3.3(Windows) (Feb 2026)
 import sys
 import os
 import json
-import subprocess
 import tkinter as tk
 from tkinter import messagebox
 import customtkinter as ctk
@@ -38,6 +37,7 @@ import glob
 
 from DebugLog import log
 from DebugLog import init_log
+from RyujinxProcess import ryujinx_launch, unmount_appimage, mount_appimage
 
 LAUNCHER_VERSION = "1.1.0"
 
@@ -181,13 +181,12 @@ if os.path.exists(path_config_file):
         pass
 
 # ============================================================================
-# SECTION 4b: APPIMAGE DETECTION & MOUNT HELPERS (LINUX ONLY)
+# SECTION 4b: APPIMAGE DETECTION (LINUX ONLY)
 # ============================================================================
 # For AppImage: ryujinx_dir is swapped to mount point (usr/bin) so SDL,
 # version detection, and TARGET_EXE all work unchanged from the mount point.
 # Mount stays alive for the entire session — only unmounted on final exit.
 # PR_SET_PDEATHSIG ensures the mount process is killed even on hard crash.
-mount_proc    = None  # Popen handle — terminating it unmounts the squashfs
 
 _appimage_candidates = (
     glob.glob(os.path.join(ryujinx_dir, "[Rr]yujinx*.AppImage")) or
@@ -195,54 +194,6 @@ _appimage_candidates = (
 )
 appimage_path = _appimage_candidates[0] if _appimage_candidates else None
 is_appimage   = sys.platform not in ("win32", "darwin") and appimage_path is not None
-
-def mount_appimage():
-    """
-    Mount Ryujinx.AppImage using --appimage-mount.
-    PR_SET_PDEATHSIG ensures mount process is killed even on hard launcher crash.
-    Returns the mount point path.
-    """
-    if not is_appimage:
-        return
-
-    global mount_proc
-
-    import signal
-    libc = ctypes.CDLL("libc.so.6", use_errno=True)
-    PR_SET_PDEATHSIG = 1
-
-    mount_proc = subprocess.Popen(
-        [appimage_path, "--appimage-mount"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        preexec_fn=lambda: libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
-    )
-
-    mount_point = mount_proc.stdout.readline().decode().strip()
-
-    if not mount_point or not os.path.exists(mount_point):
-        messagebox.showerror(
-            "AppImage Mount Failed",
-            f"Could not mount Ryujinx.AppImage.\n\n"
-            f"Please ensure the file is executable:\n"
-            f"chmod +x {appimage_path}"
-        )
-        sys.exit(1)
-
-    log("INFO", "AppImage detected", appimage_path)
-    log("INFO", "AppImage mounted at", mount_point)
-    return os.path.join(mount_point, "usr", "bin")
-
-def unmount_appimage():
-    """Terminate the mount process, releasing the squashfs mount."""
-    global mount_proc
-
-    if not is_appimage or not mount_proc:
-        return
-
-    mount_proc.terminate()
-    mount_proc = None
-    log("INFO", "AppImage unmounted")
 
 # ============================================================================
 # SECTION 5: PLATFORM-SPECIFIC CONFIGURATION
@@ -268,7 +219,7 @@ elif sys.platform == "darwin":  # macOS
 
 else:  # Linux
     if is_appimage:
-        ryujinx_dir = mount_appimage()
+        ryujinx_dir = mount_appimage(is_appimage, appimage_path)
     TARGET_EXE = os.path.join(ryujinx_dir, "Ryujinx")
     CONFIG_FILE = os.path.expanduser("~/.config/Ryujinx/Config.json")
 
@@ -983,7 +934,7 @@ class RyujinxLauncherApp:
         if self.alert_mode == "LAUNCH":
             self.force_launch()
         elif self.alert_mode == "EXIT":
-            unmount_appimage()
+            unmount_appimage(is_appimage)
             self.root.destroy()
         elif self.alert_mode == "KILL_CONFIRM":
             self.kill_and_quit()
@@ -1003,7 +954,7 @@ class RyujinxLauncherApp:
         if self.ryujinx_process:
             self.ryujinx_process.kill()
             log("INFO", "Ryujinx killed — exiting to desktop")
-        unmount_appimage()
+        unmount_appimage(is_appimage)
         self.root.quit()
         sys.exit()
 
@@ -1170,7 +1121,7 @@ class RyujinxLauncherApp:
                             if self.alert_mode == "LAUNCH":
                                 self.force_launch()
                             elif self.alert_mode == "EXIT":
-                                unmount_appimage()
+                                unmount_appimage(is_appimage)
                                 self.root.destroy()
                         elif button == SDLManager.SDL_CONTROLLER_BUTTON_B:
                             self.close_alert()
@@ -1212,7 +1163,7 @@ class RyujinxLauncherApp:
                     elif direction == 0:
                         SDLManager.axis_engaged[which] = False  # reset when stick returns to center
             elif event.type == SDLManager.SDL_QUIT:
-                unmount_appimage()
+                unmount_appimage(is_appimage)
                 self.root.destroy()
 
         # Schedule next update in 16ms
@@ -1766,7 +1717,7 @@ class RyujinxLauncherApp:
             try:
                 # Launch Ryujinx with all arguments passed to launcher
                 cmd_args = [TARGET_EXE] + sys.argv[1:]
-                self.ryujinx_process = subprocess.Popen(cmd_args, env=ryujinx_env)
+                self.ryujinx_process = ryujinx_launch(cmd_args, ryujinx_env)
             except Exception as e:
                 log("EXCEPTION", "Launch failed", e)
                 messagebox.showerror(
