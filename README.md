@@ -1,6 +1,6 @@
 # <img src="assets/RyujinxLauncherPNG.png" alt="Ryujinx Launcher Logo" width="24"> Ryujinx Launcher
 
-***Version 1.1.0***
+***Version 1.2.0***
 
 # <img src="https://repository-images.githubusercontent.com/1152064244/0948360e-bad3-48bb-be30-f2db1aeb4d71" alt="Ryujinx Launcher">
 ---
@@ -40,6 +40,7 @@ While you *can* run this launcher directly to set up your controllers before lau
 ## ✨ Features
 
 * **Gamepad-First UI:** Assign up to 8 controllers without touching a keyboard or mouse.
+* **Controller Profile Selection:** Switch between saved controller profiles (button mappings, deadzone settings, etc.) directly from the launcher UI using only your gamepad — no need to open Ryujinx settings.
 * **Visual Identity:** Controllers are assigned persistent, unique pastel colors for easy identification.
 * **Side-Rail Interface:** Clean, high-contrast UI with visual indicators for active status.
 * **Hot-Plug Support:** Connect or disconnect controllers in real-time with automatic reconnection.
@@ -56,9 +57,47 @@ While you *can* run this launcher directly to set up your controllers before lau
 | :--- | :--- |
 | **Assign Player** | `Ⓐ` Button |
 | **Remove Player** | `Ⓑ` Button |
+| **Open Profile Selector** | `Ⓧ` Button (on an assigned slot) |
+| **Browse Profiles** | `D-pad ◄ ►` or Left Stick |
+| **Confirm Profile** | `Ⓐ` Button |
+| **Cancel Profile Edit** | `Ⓑ` Button |
 | **Launch Game/Ryujinx** | `☰` Button |
 | **Exit Launcher** | `⧉` |
 | **Force Kill Emulator** | Hold `⧉` + `LB` + `RB` (approx. 1 sec) |
+
+---
+
+## 🎛️ Controller Profile Selection
+
+The launcher lets you pick a **controller profile** (button mappings, deadzone, stick sensitivity, etc.) for each player slot — all from your gamepad.
+
+### How It Works
+
+1. **Assign a controller** to a player slot with `Ⓐ`.
+2. Press `Ⓧ` on that slot to enter **Profile Selection Mode**.
+3. Use **D-pad ◄ ►** or **Left Stick** to browse available profiles.
+4. Press `Ⓐ` to **confirm** or `Ⓑ` to **cancel**.
+
+### Profiles
+
+| Profile | Description |
+| :--- | :--- |
+| **RL Default** | The controller mapping template from your existing `Config.json`. This is selected by default. |
+| **Custom Profiles** | Any `.json` files saved in Ryujinx's `profiles/controller/` directory. |
+
+### Creating Profiles
+
+Profiles are created using **Ryujinx's built-in profile save** feature:
+
+1. Open **Ryujinx → Options → Settings → Input**.
+2. Configure your controller (button mappings, deadzone, stick sensitivity, motion, rumble, etc.).
+3. Type a **Profile Name** in the profile field and click **Save**.
+4. The profile is saved as a `.json` file in Ryujinx's `profiles/controller/` directory.
+5. The launcher will automatically detect it the next time it starts.
+
+> **Tip:** To set a personalized default, save a profile named **"RL Default"** in Ryujinx — the launcher will automatically use it instead of the `Config.json` template.
+
+Profile choices are remembered per controller (by HID path), so reconnecting the same gamepad restores its last-used profile.
 
 ---
 

@@ -39,7 +39,7 @@ from DebugLog import log
 from DebugLog import init_log
 from RyujinxProcess import ryujinx_launch, unmount_appimage, mount_appimage
 
-LAUNCHER_VERSION = "1.1.0"
+LAUNCHER_VERSION = "1.2.0"
 
 # ============================================================================
 # SECTION 1: HI-DPI DISPLAY SUPPORT
