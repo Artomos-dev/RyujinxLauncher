@@ -481,7 +481,7 @@ class LauncherUi:
 
                     lbl_disc.place(relx=0.5, rely=0.75, anchor="center")
                     lbl_disc.configure(
-                        text="Ⓑ CANCEL   |   Ⓧ CONFIRM",
+                        text="Ⓐ CONFIRM   |   Ⓑ CANCEL",
                         fg_color="transparent",
                         text_color=COLOR['NEON_RED']
                     )

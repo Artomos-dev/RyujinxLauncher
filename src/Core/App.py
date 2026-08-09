@@ -285,7 +285,12 @@ class LauncherApp:
                         continue
 
                     if button == sdl.SDL_CONTROLLER_BUTTON_A:
-                        self.assign_player(which)       # Assign controller
+                        # Confirm profile edit if active, otherwise assign
+                        slot_idx = self.find_slot_by_instance(which)
+                        if slot_idx != -1 and self.assignments[slot_idx]["is_editing"]:
+                            self.toggle_profile_edit(which)
+                        else:
+                            self.assign_player(which)   # Assign controller
                     elif button == sdl.SDL_CONTROLLER_BUTTON_B:
                         # Cancel profile edit if active, otherwise disconnect
                         slot_idx = self.find_slot_by_instance(which)
@@ -295,7 +300,7 @@ class LauncherApp:
                         else:
                             self.remove_player(which)   # Remove assignment
                     elif button == sdl.SDL_CONTROLLER_BUTTON_X:
-                        self.toggle_profile_edit(which) # Enter/confirm profile selection
+                        self.toggle_profile_edit(which) # Enter/exit profile selection
                     elif button == sdl.SDL_CONTROLLER_BUTTON_DPAD_LEFT:
                         self.cycle_profile(which, -1)   # Previous profile
                     elif button == sdl.SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
@@ -402,14 +407,14 @@ class LauncherApp:
         Toggle profile selection mode (State A <-> State B) for a controller's slot.
 
         X in State A -> enters edit mode.
-        X in State B -> confirms current selection and exits edit mode.
+        A (or X) in State B -> confirms current selection and exits edit mode.
         """
         slot_idx = self.find_slot_by_instance(instance_id)
         if slot_idx == -1:
             return  # Controller not assigned to any slot
         self.assignments[slot_idx]["is_editing"] = not self.assignments[slot_idx]["is_editing"]
         if not self.assignments[slot_idx]["is_editing"]:
-            # X pressed to confirm
+            # Selection confirmed
             log("INFO", f"Player {slot_idx + 1} profile confirmed -> {self.assignments[slot_idx]['profile_key']}")
 
         self.refresh_grid()
