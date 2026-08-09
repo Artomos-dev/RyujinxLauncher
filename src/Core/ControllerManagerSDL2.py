@@ -1,11 +1,11 @@
 """
-ControllerManagerSDL2.py — SDLManager class
+Core/ControllerManagerSDL2.py — SDLManager class
 Part of the Ryujinx Gamepad Launcher.
 
 Wrapper over PySDL2. Nothing outside this file ever touches sdl2 directly.
 Call everything on the class — no instantiation needed.
 
-    from ControllerManagerSDL2 import SDLManager
+    from Core.ControllerManagerSDL2 import SDLManager
     SDLManager.SDL_Init()
     ids = SDLManager.SDL_GetJoystickIDs()
 

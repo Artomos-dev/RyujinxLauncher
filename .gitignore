@@ -16,3 +16,5 @@ dist/
 # IDEs
 .vscode/
 .idea/
+# Local machine config (user emulator paths)
+*Path.config

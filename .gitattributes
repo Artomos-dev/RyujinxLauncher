@@ -1,0 +1,5 @@
+# Batch files must keep CRLF or "goto :label" fails at runtime
+*.bat text eol=crlf
+
+# Shell scripts must keep LF or the shebang breaks
+*.sh text eol=lf

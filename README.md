@@ -193,25 +193,84 @@ ProjectRoot/
 │   ├── RyujinxLauncherIcon.ico
 │   └── RyujinxLauncherPNG.png
 ├── src/
-│   └── RyujinxLauncher.py
+│   ├── RyujinxLauncher.py          # entry point
+│   ├── Core/                       # emulator-agnostic engine
+│   │   ├── Bootstrap.py            #   startup sequence
+│   │   ├── App.py                  #   assignment, hot-plug, kill combo, event loop
+│   │   ├── Ui.py                   #   theme, scaling, player grid, alerts, toasts
+│   │   ├── Emulator.py             #   the contract an emulator implements
+│   │   ├── Sdl.py                  #   SDL backend loader
+│   │   ├── ControllerManagerSDL2.py
+│   │   ├── ControllerManagerSDL3.py
+│   │   ├── Process.py              #   launch, Job Object, PDEATHSIG, AppImage
+│   │   ├── Paths.py                #   directory + resource resolution
+│   │   └── Log.py
+│   └── Ryujinx/                    # everything Ryujinx-specific
+│       ├── Ryujinx.py              #   the adapter Core talks to
+│       ├── Version.py              #   version detection (PE / plist / binary scan)
+│       └── Config.py               #   Config.json template, profiles, input writer
 └── requirements.txt
 ```
 
+`Core/` knows nothing about any particular emulator: it receives an object
+implementing `Core/Emulator.py` and drives it. Supporting another emulator
+means adding a folder beside `Ryujinx/` and a matching entry script -
+`Core/` is not modified.
+
 ### Build Command
 
-Run this command from the ProjectRoot terminal to create a standalone EXE/BIN/APP with bundled assets:
+Use the build script for your platform. It takes the launcher name as its only
+argument and does everything: finds `.venv` (creating it and installing
+`requirements.txt` if it is missing), deletes that launcher's previous build
+output, and produces a single-file executable in `dist/`.
+
+**Windows**
+
+```bat
+build.bat Ryujinx
+```
+
+**Linux / macOS**
+
+```bash
+chmod +x build.sh      # first time only
+./build.sh Ryujinx
+```
+
+The argument is the launcher name, not the file name: `Ryujinx` builds
+`src/RyujinxLauncher.py` into `dist/RyujinxLauncher.exe` (or `dist/RyujinxLauncher`
+on Linux/macOS). Run either script with no argument to list the launchers
+available in `src/`.
+
+Notes:
+
+* The icon is picked automatically per platform, and an emulator-specific icon
+  (`assets/<Name>LauncherIcon.ico`) is used if one exists.
+* If `<Name>Path.config` sits next to the script it is copied into `dist/`, since
+  the built executable looks for it beside itself.
+* Set `VENV_DIR` to build against an environment somewhere other than `.venv`.
+* Linux needs `python3-venv` and `python3-tk` installed; the script tells you the
+  exact package name if either is missing.
+
+These are the same scripts CI runs, so a build that works locally works in
+GitHub Actions.
+
+### Manual Build Command
+
+Only needed if you are not using the scripts above. Run from the ProjectRoot
+terminal to create a standalone EXE/BIN/APP with bundled assets:
 
 ### Windows
 
-`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets\RyujinxLauncherIcon.ico" --add-data "assets;assets" --collect-all customtkinter src\RyujinxLauncher.py`
+`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets\RyujinxLauncherIcon.ico" --add-data "assets;assets" --collect-all customtkinter --paths src --hidden-import Core.ControllerManagerSDL2 --hidden-import Core.ControllerManagerSDL3 src\RyujinxLauncher.py`
 
 ### MacOS
 
-`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets/RyujinxLauncherIcon.ico" --add-data "assets:assets" --collect-all customtkinter src/RyujinxLauncher.py`
+`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets/RyujinxLauncherIcon.ico" --add-data "assets:assets" --collect-all customtkinter --paths src --hidden-import Core.ControllerManagerSDL2 --hidden-import Core.ControllerManagerSDL3 src/RyujinxLauncher.py`
 
 ### Linux
 
-`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets/RyujinxLauncherPNG.png" --add-data "assets:assets" --collect-all customtkinter src/RyujinxLauncher.py`
+`pyinstaller --noconsole --onefile --name "RyujinxLauncher" --icon="assets/RyujinxLauncherPNG.png" --add-data "assets:assets" --collect-all customtkinter --paths src --hidden-import Core.ControllerManagerSDL2 --hidden-import Core.ControllerManagerSDL3 src/RyujinxLauncher.py`
 
 The resulting `RyujinxLauncher` executable will be in the `dist/` folder.
 
