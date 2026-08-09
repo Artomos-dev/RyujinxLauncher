@@ -1,15 +1,31 @@
-import ctypes
-import sys
-import subprocess
-import os
-from tkinter import messagebox
-from DebugLog import log
+"""
+Core/Process.py
+Child-process lifecycle and AppImage mounting.
 
-# ========================================================================
+Emulator-agnostic. Guarantees the emulator dies with the launcher on every
+platform:
+
+    Windows : Job Object with KILL_ON_JOB_CLOSE
+    Linux   : PR_SET_PDEATHSIG -> SIGKILL
+    macOS   : SIGHUP restored to default in the child
+"""
+
+import ctypes
+import os
+import subprocess
+import sys
+
+from .Log import log, fatal
+
+# ============================================================================
 # WIN32 JOB OBJECT
-# ========================================================================
-def create_win32_job():
-    """Job Object with KILL_ON_JOB_CLOSE — OS kills Ryujinx if launcher dies."""
+# ============================================================================
+_win32_job       = None
+_win32_job_ready = False
+
+
+def _create_win32_job():
+    """Job Object with KILL_ON_JOB_CLOSE - OS kills the emulator if launcher dies."""
     if sys.platform != "win32":
         return None
 
@@ -71,23 +87,45 @@ def create_win32_job():
     log("INFO", "Win32 Job Object created (KILL_ON_JOB_CLOSE)")
     return job
 
-# Create Win32 Job Object for automatic process cleanup
-win32_job = create_win32_job() if sys.platform == "win32" else None
 
-def ryujinx_launch(cmd_args, ryujinx_env):
-    # Attach Ryujinx to the job — OS kills it automatically if launcher dies
+def _job():
+    """Create the Job Object on first use (so its log line reaches the log file)."""
+    global _win32_job, _win32_job_ready
+    if not _win32_job_ready:
+        _win32_job_ready = True
+        _win32_job = _create_win32_job()
+    return _win32_job
+
+
+# ============================================================================
+# LAUNCH
+# ============================================================================
+def launch(cmd_args, env):
+    """
+    Start the emulator, tied to the launcher's lifetime.
+
+    Args:
+        cmd_args (list[str]): Full command line, executable first.
+        env      (dict):      Environment for the child process.
+
+    Returns:
+        subprocess.Popen: The running emulator process.
+    """
     if sys.platform == "win32":
-        ryujinx_process = subprocess.Popen(cmd_args, env=ryujinx_env, creationflags=0x00000004)
-        if win32_job:
+        # CREATE_SUSPENDED so the process is attached to the Job Object before
+        # it can spawn anything of its own
+        process = subprocess.Popen(cmd_args, env=env, creationflags=0x00000004)
+        job = _job()
+        if job:
             result = ctypes.windll.kernel32.AssignProcessToJobObject(
-                win32_job, int(ryujinx_process._handle)
+                job, int(process._handle)
             )
             if result:
-                log("INFO", "Ryujinx assigned to Job Object")
+                log("INFO", "Emulator assigned to Job Object")
             else:
                 err = ctypes.windll.kernel32.GetLastError()
                 log("WARNING", "AssignProcessToJobObject failed", f"error={err}")
-        ctypes.windll.ntdll.NtResumeProcess(int(ryujinx_process._handle))
+        ctypes.windll.ntdll.NtResumeProcess(int(process._handle))
     else:
         import signal as _signal
         if sys.platform == "darwin":
@@ -95,58 +133,61 @@ def ryujinx_launch(cmd_args, ryujinx_env):
         else:
             _libc = ctypes.CDLL("libc.so.6", use_errno=True)
             _preexec = lambda: _libc.prctl(1, _signal.SIGKILL, 0, 0, 0)  # PR_SET_PDEATHSIG
-        ryujinx_process = subprocess.Popen(cmd_args, env=ryujinx_env, preexec_fn=_preexec)
-    return ryujinx_process
+        process = subprocess.Popen(cmd_args, env=env, preexec_fn=_preexec)
+    return process
+
 
 # ============================================================================
 # APPIMAGE MOUNT HELPERS (LINUX ONLY)
 # ============================================================================
-mount_proc    = None  # Popen handle — terminating it unmounts the squashfs
+_mount_proc = None  # Popen handle - terminating it unmounts the squashfs
 
-def mount_appimage(is_appimage, appimage_path):
-    """
-    Mount Ryujinx.AppImage using --appimage-mount.
-    PR_SET_PDEATHSIG ensures mount process is killed even on hard launcher crash.
-    Returns the mount point path.
-    """
-    if not is_appimage:
-        return
 
-    global mount_proc
+def mount_appimage(appimage_path):
+    """
+    Mount an AppImage using --appimage-mount and keep it mounted for the
+    whole session. PR_SET_PDEATHSIG ensures the mount process is killed even
+    on a hard launcher crash.
+
+    Returns:
+        str: The mount point (squashfs root). Callers usually append usr/bin.
+    """
+    global _mount_proc
 
     import signal
     libc = ctypes.CDLL("libc.so.6", use_errno=True)
     PR_SET_PDEATHSIG = 1
 
-    mount_proc = subprocess.Popen(
+    _mount_proc = subprocess.Popen(
         [appimage_path, "--appimage-mount"],
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         preexec_fn=lambda: libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
     )
 
-    mount_point = mount_proc.stdout.readline().decode().strip()
+    mount_point = _mount_proc.stdout.readline().decode().strip()
 
     if not mount_point or not os.path.exists(mount_point):
-        messagebox.showerror(
+        fatal(
             "AppImage Mount Failed",
-            f"Could not mount Ryujinx.AppImage.\n\n"
+            f"Could not mount {os.path.basename(appimage_path)}.\n\n"
             f"Please ensure the file is executable:\n"
-            f"chmod +x {appimage_path}"
+            f"chmod +x {appimage_path}",
+            "AppImage mount failed", appimage_path
         )
-        sys.exit(1)
 
     log("INFO", "AppImage detected", appimage_path)
     log("INFO", "AppImage mounted at", mount_point)
-    return os.path.join(mount_point, "usr", "bin")
+    return mount_point
 
-def unmount_appimage(is_appimage):
-    """Terminate the mount process, releasing the squashfs mount."""
-    global mount_proc
 
-    if not is_appimage or not mount_proc:
+def unmount_appimage():
+    """Terminate the mount process, releasing the squashfs mount. No-op if unmounted."""
+    global _mount_proc
+
+    if not _mount_proc:
         return
 
-    mount_proc.terminate()
-    mount_proc = None
+    _mount_proc.terminate()
+    _mount_proc = None
     log("INFO", "AppImage unmounted")
